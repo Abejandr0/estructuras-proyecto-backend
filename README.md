@@ -25,21 +25,21 @@ CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `me
 
 ## Estructuras
 
-| Estructura | Uso | Complejidad |
+| Estructura | Uso actual / estado | Complejidad |
 |---|---|---|
-| DynamicArray | Colecciones indexadas | acceso O(1), inserción amortizada O(1), quitar O(n) |
-| Stack | Deshacer/rehacer y stash (base) | push/pop O(1) |
-| Queue | BFS y tareas IA | enqueue/dequeue amortizado O(1) |
-| NaryTree | Árbol de directorios | recorrido O(n) |
-| Graph | DAG de commits | BFS/topológico O(V+E) |
-| SinglyLinkedList | Historial lineal | append O(1), búsqueda O(n) |
-| DoublyLinkedList | Reflog y LRU | insertar/quitar por nodo O(1) |
-| CircularDoublyLinkedList | Rotación de ramas/stashes | rotación O(1) |
-| HashTable | Índice de objetos | promedio O(1), peor O(n) |
-| Trie | Autocompletado | O(k) por prefijo |
-| MinHeap | Prioridad | push/pop O(log n), peek O(1) |
-| BloomFilter | Consulta probable de existencia | O(k), puede tener falsos positivos |
-| LRUCache | Caché de lectura | promedio O(1) |
+| DynamicArray | Colecciones indexadas y rutas de recorrido | acceso O(1), inserción amortizada O(1), quitar O(n) |
+| Stack | Almacenamiento de la pila persistida de stashes | push/pop O(1) |
+| Queue | BFS de objetos alcanzables y recorridos del motor | enqueue/dequeue amortizado O(1) |
+| NaryTree | Implementada; falta conectarla al árbol de archivos | recorrido O(n) |
+| Graph | Implementado; el motor recorre el DAG con BFS/Queue | BFS/topológico O(V+E) |
+| SinglyLinkedList | Implementada; historial lineal aún no la usa | append O(1), búsqueda O(n) |
+| DoublyLinkedList | Base de la lista usada por LRUCache | insertar/quitar por nodo O(1) |
+| CircularDoublyLinkedList | Implementada; falta conectarla al carrusel de ramas/stashes | rotación O(1) |
+| HashTable | Índice en memoria de objetos leídos/escritos | promedio O(1), peor O(n) |
+| Trie | Implementado; autocompletado aún no integrado | O(k) por prefijo |
+| MinHeap | Implementado; top-K aún no integrado | push/pop O(log n), peek O(1) |
+| BloomFilter | Negociación remota de objetos junto con hashes exactos | O(k), puede tener falsos positivos |
+| LRUCache | Implementado; falta conectarlo a lecturas y diffs del motor | promedio O(1) |
 
 La regla del curso prohíbe `Map`, `Set` y librerías de estructuras de datos en core; las colecciones del motor usan implementaciones propias. La interfaz y el servidor pueden usar colecciones nativas.
 
