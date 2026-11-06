@@ -1,0 +1,9 @@
+{
+  "name": "minigit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {"build": "npm run build -w @minigit/core && npm run build -w @minigit/cli && npm run build -w @minigit/server && npm run build -w @minigit/web", "test": "vitest run", "dev:server": "npm run dev -w @minigit/server", "dev:web": "npm run dev -w @minigit/web"},
+  "devDependencies": {"@types/node": "^22.10.0", "@types/react": "^18.3.12", "@types/react-dom": "^18.3.1", "typescript": "^5.7.2", "vitest": "^2.1.8"}
+}
