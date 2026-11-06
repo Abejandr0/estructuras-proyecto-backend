@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import {Repository} from '@minigit/core';
+import {BloomFilter,Repository} from '@minigit/core';
 import {spawn} from 'node:child_process';
 import {mkdir} from 'node:fs/promises';
 import path from 'node:path';
 
 const [command, ...args] = process.argv.slice(2);
+const bloomFor=(hashes:string[])=>{const filter=new BloomFilter(Math.max(8192,hashes.length*16));for(const h of hashes)filter.add(h);return filter.serialize()};
 const api = (url: string, route: string) => `${url.replace(/\/$/, '')}/api/remote/${route}`;
 async function request(url: string, route: string, body?: unknown): Promise<unknown> {
   const response = await fetch(api(url, route), body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : undefined);
@@ -16,14 +17,14 @@ try {
   else if (command === 'clone') {
     const [url, directory] = args; if (!url || !directory) throw new Error('Usage: minigit clone <url> <directory>');
     const target=path.resolve(directory); await mkdir(target,{recursive:true}); const repo=await Repository.init(target);
-    const snapshot=await request(url,'pack',{have:[]}) as {objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string};
+    const snapshot=await request(url,'pack',{have:[],bloom:bloomFor([])}) as {objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string};
     await repo.importRemote(snapshot); if(snapshot.head&&snapshot.refs[snapshot.head])await repo.checkout(snapshot.head,true); console.log(`Cloned ${url} into ${target}`);
   } else if (command === 'serve') {
     const entry = new URL('../../server/dist/index.js', import.meta.url); const child=spawn(process.execPath,[entry.pathname],{stdio:'inherit',env:process.env}); child.on('exit',code=>process.exit(code??0));
   } else if (command === 'push' || command === 'pull') {
     const url=args[0]; if(!url)throw new Error(`Usage: minigit ${command} <server-url>`); const repo=await Repository.open();
-    if(command==='push') { const remote=await request(url,'hashes') as {hashes:string[]}; const snapshot=await repo.remoteSnapshot(remote.hashes); await request(url,'push',{snapshot}); console.log('Push completed'); }
-    else { const snapshot=await request(url,'pack',{have:await repo.objectHashes()}) as {objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string}; await repo.importRemote(snapshot); if(snapshot.head&&snapshot.refs[snapshot.head])await repo.checkout(snapshot.head,true); console.log('Pull completed'); }
+    if(command==='push') { const remote=await request(url,'hashes') as {hashes:string[]}; const snapshot=await repo.remoteSnapshot(remote.hashes,bloomFor(remote.hashes)); await request(url,'push',{snapshot}); console.log('Push completed'); }
+    else { const snapshot=await request(url,'pack',{have:await repo.objectHashes(),bloom:bloomFor(await repo.objectHashes())}) as {objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string}; await repo.importRemote(snapshot); if(snapshot.head&&snapshot.refs[snapshot.head])await repo.checkout(snapshot.head,true); console.log('Pull completed'); }
   } else {
     const repo=await Repository.open();
     switch(command){
