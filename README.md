@@ -12,7 +12,7 @@ npm run dev:server # en un repositorio inicializado, puerto 4179
 npm run dev:web    # Vite
 ```
 
-CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `serve`. Para ejecutar desde el workspace: `node packages/cli/dist/index.js <comando>`.
+CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `merge`, `stash`, `reset`, `revert`, `serve`, `clone`, `push`, `pull`. Para remoto, inicia `minigit serve` dentro del repo del servidor y usa la URL HTTP en clone/push/pull.
 
 ## Arquitectura y persistencia
 
@@ -45,4 +45,4 @@ La regla del curso prohíbe `Map`, `Set` y librerías de estructuras de datos en
 
 ## Estado de alcance
 
-Esta entrega cubre el almacenamiento local inicial, staging, commits lineales, ramas, checkout, status, log, API local, eventos de archivos e IA inicial. Merge con conflictos, undo/redo y stash/reset/revert, sincronización remota completa (clone/push/pull con negociación de objetos), revisiones IA con cola persistente/reintentos, edición de archivos y pruebas de integración del servidor aún requieren implementación. No se deben usar los comandos stub como si ya fueran compatibles con Git. Los objetos son un formato educativo propio y no intercambiables con Git.
+Esta entrega cubre almacenamiento local, ramas, merge con marcadores de conflicto, stash, reset, revert, sincronización remota por HTTP, API local, eventos de archivos, IA heurística y adaptador de revisión por API, y una interfaz de exploración. La transferencia calcula objetos faltantes usando hashes conocidos. El backend de IA aún no implementa reintentos ni un límite configurable de concurrencia; la cola y sus estados solo existen durante la solicitud. El editor no guarda cambios y el panel de diff y el grafo todavía son vistas iniciales. `reset --hard` reescribe el árbol de trabajo y debe usarse con cuidado. Los objetos y el protocolo son educativos y no intercambiables con Git. Benchmarks básicos: `npm run bench`.

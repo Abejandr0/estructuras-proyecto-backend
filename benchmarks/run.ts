@@ -1,0 +1,5 @@
+import{performance}from'node:perf_hooks';import{BloomFilter,HashTable,diffLines}from'../packages/core/src/index.js';
+const count=20_000,keys=Array.from({length:count},(_,i)=>`object-${i}`);function measure(name:string,run:()=>void):void{const start=performance.now();run();console.log(`${name}: ${(performance.now()-start).toFixed(2)} ms`)}
+const table=new HashTable<string,number>(),native=new Map<string,number>();measure('HashTable insert',()=>keys.forEach((k,i)=>table.set(k,i)));measure('Map insert',()=>keys.forEach((k,i)=>native.set(k,i)));measure('HashTable lookup',()=>keys.forEach(k=>table.get(k)));measure('Map lookup',()=>keys.forEach(k=>native.get(k)));
+const bloom=new BloomFilter(count*12),linear:string[]=[];keys.forEach(k=>{bloom.add(k);linear.push(k)});const probes=['object-19','missing-a','missing-b','object-12000'];measure('Bloom membership',()=>probes.forEach(k=>bloom.mightContain(k)));measure('Linear membership',()=>probes.forEach(k=>linear.includes(k)));
+const before=Array.from({length:800},(_,i)=>`line ${i}`).join('\n'),after=before.replace('line 400','changed line 400');measure('Myers diff',()=>diffLines(before,after));
