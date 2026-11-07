@@ -20,7 +20,7 @@ try {
     const snapshot=await request(url,'pack',{have:[],bloom:bloomFor([])}) as {objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string};
     await repo.importRemote(snapshot); if(snapshot.head&&snapshot.refs[snapshot.head])await repo.checkout(snapshot.head,true); console.log(`Cloned ${url} into ${target}`);
   } else if (command === 'serve') {
-    const entry = new URL('../../server/dist/index.js', import.meta.url); const child=spawn(process.execPath,[entry.pathname],{stdio:'inherit',env:process.env}); child.on('exit',code=>process.exit(code??0));
+    const entry = new URL('../../server/dist/index.js', import.meta.url); const child=spawn(process.execPath,[entry.pathname],{stdio:'inherit',env:{...process.env,MINIGIT_REPO:process.cwd()}}); child.on('exit',code=>process.exit(code??0));
   } else if (command === 'push' || command === 'pull') {
     const url=args[0]; if(!url)throw new Error(`Usage: minigit ${command} <server-url>`); const repo=await Repository.open();
     if(command==='push') { const remote=await request(url,'hashes') as {hashes:string[]}; const snapshot=await repo.remoteSnapshot(remote.hashes,bloomFor(remote.hashes)); await request(url,'push',{snapshot}); console.log('Push completed'); }

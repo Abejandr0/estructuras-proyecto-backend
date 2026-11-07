@@ -1,3 +1,102 @@
-import {createServer} from 'node:http';import express from 'express';import {watch} from 'node:fs';import path from 'node:path';import {WebSocketServer} from 'ws';import {Repository,diffLines,Queue} from '@minigit/core';
-const root=process.env.MINIGIT_REPO??process.cwd(),port=Number(process.env.PORT??4179),tasks=new Queue<{id:string;kind:string;input:string;state:string}>();let seq=0;const repo=await Repository.open(root);const app=express(),server=createServer(app);app.use(async(req,res)=>{res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');if(req.method==='OPTIONS'){res.end();return}const url=new URL(req.url??'/',`http://${req.headers.host??'localhost'}`);const send=(v:unknown,status=200)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(v))};try{if(url.pathname==='/api/repo/status')return send(await repo.status());if(url.pathname==='/api/repo/log')return send(await repo.log());if(url.pathname==='/api/repo/branches')return send(await repo.branches());if(url.pathname==='/api/repo/tree')return send(await repo.tree(url.searchParams.get('ref')??undefined));if(url.pathname==='/api/repo/file'){const filePath=url.searchParams.get('path');if(!filePath)return send({error:'path required'},400);const entry=(await repo.tree()).find(e=>e.path===filePath);if(!entry)return send({error:'File not found'},404);const object=await repo.readObject(entry.hash);return send({path:filePath,content:object.body.toString('utf8'),hash:entry.hash})}if(url.pathname==='/api/repo/diff'){const a=await repo.tree(url.searchParams.get('from')??undefined),b=await repo.tree(url.searchParams.get('to')??undefined);return send({files:b.map(x=>x.path),diff:diffLines(JSON.stringify(a),JSON.stringify(b))})}if(url.pathname==='/api/structures')return send(repo.getStructureSnapshot());if(url.pathname==='/api/ai/tasks')return send({tasks:[],queued:tasks.size});if(url.pathname.startsWith('/api/ai/')){const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));const body=JSON.parse(Buffer.concat(chunks).toString()||'{}') as {text?:string;diff?:string};const task={id:String(++seq),kind:url.pathname.split('/').at(-1)??'',input:body.diff??body.text??'',state:'pendiente'};tasks.enqueue(task);task.state='procesando';const result=await ai(task.kind,task.input);task.state='listo';return send({task,result})}if(['/api/repo/add','/api/repo/commit','/api/repo/branch','/api/repo/checkout','/api/repo/merge','/api/repo/stash','/api/repo/reset','/api/repo/revert'].includes(url.pathname)){const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));const body=JSON.parse(Buffer.concat(chunks).toString()||'{}') as {paths?:string[];message?:string;name?:string;action?:'push'|'apply'|'pop'|'list';target?:string;hard?:boolean};if(url.pathname.endsWith('/add'))return send({staged:await repo.add(body.paths??[])});if(url.pathname.endsWith('/commit')){if(!body.message)return send({error:'message required'},400);return send({hash:await repo.commit(body.message)})}if(url.pathname.endsWith('/stash'))return send({stashes:await repo.stash(body.action??'push')});if(url.pathname.endsWith('/reset'))return send({hash:await repo.reset(body.target??'HEAD',body.hard??false)});if(url.pathname.endsWith('/revert'))return send({hash:await repo.revert(body.target)});if(!body.name)return send({error:'name required'},400);if(url.pathname.endsWith('/branch')){await repo.branch(body.name);return send({branches:await repo.branches()})}if(url.pathname.endsWith('/checkout')){await repo.checkout(body.name);return send({branch:body.name})}return send(await repo.merge(body.name))}if(url.pathname==='/api/remote/refs')return send({refs:(await repo.remoteSnapshot()).refs});if(url.pathname==='/api/remote/hashes')return send({hashes:await repo.objectHashes()});if(url.pathname==='/api/remote/pack'||url.pathname==='/api/remote/push'){const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));const body=JSON.parse(Buffer.concat(chunks).toString()||'{}') as {have?:string[];snapshot?:{objects:Array<{hash:string;data:string}>;refs:Record<string,string>;head:string};bloom?:string};if(url.pathname.endsWith('/pack'))return send(await repo.remoteSnapshot(body.have??[],body.bloom));if(!body.snapshot)return send({error:'snapshot required'},400);await repo.importRemote(body.snapshot);return send({ok:true,refs:(await repo.remoteSnapshot()).refs})}return send({error:'Not found'},404)}catch(e){send({error:e instanceof Error?e.message:String(e)},400)}});const wss=new WebSocketServer({server,path:'/api/events'});const broadcast=(event:unknown)=>{for(const c of wss.clients)if(c.readyState===1)c.send(JSON.stringify(event))};try{watch(root,{recursive:true},(eventType,filename)=>{if(filename&&!String(filename).includes('.minigit'))broadcast({type:'filesystem',eventType,path:filename})})}catch{}server.listen(port,()=>console.log(`MiniGit server listening on http://localhost:${port} (repo ${root})`));
-async function ai(kind:string,input:string):Promise<string>{const key=process.env.OPENAI_API_KEY;if(key&&kind==='review'){const response=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.OPENAI_MODEL??'gpt-4o-mini',messages:[{role:'system',content:'Review this code diff. Return concise findings in Spanish.'},{role:'user',content:input}]})});if(response.ok){const json=await response.json() as {choices?:Array<{message?:{content?:string}}>};return json.choices?.[0]?.message?.content??'No response'}}if(kind==='commit-msg')return input.trim().split('\n').filter(Boolean)[0]?.slice(0,72)??'Actualiza el proyecto';if(kind==='resolve')return'Analiza los marcadores de conflicto y conserva ambos cambios relevantes antes de confirmar.';return input.includes('TODO')?'Revisar los TODO y agregar cobertura de errores.':'Revisión heurística: no se detectaron patrones obvios de riesgo; valida casos límite y errores.'}
+import {createServer} from 'node:http';
+import {watch} from 'node:fs';
+import express from 'express';
+import {WebSocketServer, WebSocket} from 'ws';
+import type {AITask, AITaskKind} from './ai.js';
+import {AITaskQueue, HeuristicAIProvider, OpenAIProvider} from './ai.js';
+import {resolveRepository} from './repository-root.js';
+
+const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
+const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
+const port = Number(process.env.PORT ?? 4179);
+const host = process.env.HOST ?? '127.0.0.1';
+const app = express();
+const server = createServer(app);
+const wss = new WebSocketServer({server, path: '/api/events'});
+
+function broadcast(event: unknown): void {
+  const payload = JSON.stringify(event);
+  for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(payload);
+}
+
+const externalAIEnabled = process.env.AI_ALLOW_NETWORK === 'true' && Boolean(process.env.OPENAI_API_KEY);
+const provider = externalAIEnabled
+  ? new OpenAIProvider(process.env.OPENAI_API_KEY!, process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
+  : new HeuristicAIProvider();
+const aiTasks = new AITaskQueue(provider, Number(process.env.AI_CONCURRENCY ?? 2), Number(process.env.AI_MAX_RETRIES ?? 2),
+  (task: AITask) => broadcast({type: 'ai-task', task}));
+
+app.use(express.json({limit: '2mb'}));
+app.use((request, response, next) => {
+  const origin = request.headers.origin;
+  const allowed = new Set(['http://localhost:5173', 'http://127.0.0.1:5173']);
+  if (origin && allowed.has(origin)) response.setHeader('Access-Control-Allow-Origin', origin);
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  next();
+});
+app.options('*', (_request, response) => response.sendStatus(204));
+
+app.get('/api/health', (_request, response) => response.json({ok: true, root: repo.root, provider: externalAIEnabled ? 'openai' : 'heuristic'}));
+app.get('/api/repo/status', async (_request, response, next) => { try { response.json(await repo.status()); } catch (error) { next(error); } });
+app.get('/api/repo/log', async (_request, response, next) => { try { response.json(await repo.log()); } catch (error) { next(error); } });
+app.get('/api/repo/branches', async (_request, response, next) => { try { response.json(await repo.branches()); } catch (error) { next(error); } });
+app.get('/api/repo/tree', async (request, response, next) => { try { response.json(await repo.tree(typeof request.query.ref === 'string' ? request.query.ref : undefined)); } catch (error) { next(error); } });
+app.get('/api/repo/diff', async (_request, response, next) => { try { response.json(await repo.workingTreeDiff()); } catch (error) { next(error); } });
+app.get('/api/repo/file', async (request, response, next) => {
+  try {
+    const filePath = typeof request.query.path === 'string' ? request.query.path : '';
+    const entry = (await repo.tree()).find(item => item.path === filePath);
+    if (!entry) { response.status(404).json({error: 'File not found'}); return; }
+    const object = await repo.readObject(entry.hash);
+    response.json({path: filePath, content: object.body.toString('utf8'), hash: entry.hash});
+  } catch (error) { next(error); }
+});
+app.get('/api/structures', (_request, response) => response.json(repo.getStructureSnapshot()));
+
+app.post('/api/repo/add', async (request, response, next) => { try { response.json({staged: await repo.add(request.body.paths ?? [])}); } catch (error) { next(error); } });
+app.post('/api/repo/commit', async (request, response, next) => { try { response.json({hash: await repo.commit(request.body.message)}); } catch (error) { next(error); } });
+app.post('/api/repo/branch', async (request, response, next) => { try { await repo.branch(request.body.name); response.json({branches: await repo.branches()}); } catch (error) { next(error); } });
+app.post('/api/repo/checkout', async (request, response, next) => { try { await repo.checkout(request.body.name); response.json({branch: request.body.name}); } catch (error) { next(error); } });
+app.post('/api/repo/merge', async (request, response, next) => { try { response.json(await repo.merge(request.body.name)); } catch (error) { next(error); } });
+app.post('/api/repo/stash', async (request, response, next) => { try { response.json({stashes: await repo.stash(request.body.action ?? 'push')}); } catch (error) { next(error); } });
+app.post('/api/repo/reset', async (request, response, next) => { try { response.json({hash: await repo.reset(request.body.target ?? 'HEAD', request.body.hard ?? false)}); } catch (error) { next(error); } });
+app.post('/api/repo/revert', async (request, response, next) => { try { response.json({hash: await repo.revert(request.body.target)}); } catch (error) { next(error); } });
+
+app.get('/api/ai/tasks', (_request, response) => response.json(aiTasks.list()));
+app.get('/api/ai/tasks/:id', (request, response) => {
+  const task = aiTasks.get(request.params.id);
+  if (!task) { response.status(404).json({error: 'Task not found'}); return; }
+  response.json(task);
+});
+app.post('/api/ai/:kind', (request, response) => {
+  const kind = request.params.kind as AITaskKind;
+  if (!['review', 'commit-msg', 'resolve'].includes(kind)) { response.status(404).json({error: 'Unknown AI task'}); return; }
+  response.status(202).json(aiTasks.enqueue(kind, request.body.diff ?? request.body.text ?? ''));
+});
+
+app.get('/api/remote/refs', async (_request, response, next) => { try { response.json({refs: (await repo.remoteSnapshot()).refs}); } catch (error) { next(error); } });
+app.get('/api/remote/hashes', async (_request, response, next) => { try { response.json({hashes: await repo.objectHashes()}); } catch (error) { next(error); } });
+app.post('/api/remote/pack', async (request, response, next) => { try { response.json(await repo.remoteSnapshot(request.body.have ?? [], request.body.bloom)); } catch (error) { next(error); } });
+app.post('/api/remote/push', async (request, response, next) => {
+  try {
+    if (!request.body.snapshot) { response.status(400).json({error: 'snapshot required'}); return; }
+    await repo.importRemote(request.body.snapshot);
+    response.json({ok: true, refs: (await repo.remoteSnapshot()).refs});
+  } catch (error) { next(error); }
+});
+
+app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+  response.status(400).json({error: error instanceof Error ? error.message : String(error)});
+});
+
+try {
+  watch(repo.root, {recursive: true}, (eventType, filename) => {
+    if (filename && !String(filename).includes('.minigit')) broadcast({type: 'filesystem', eventType, path: filename});
+  });
+} catch { /* Explicit API refresh remains available on filesystems without recursive watch. */ }
+
+server.listen(port, host, () => {
+  if (initialized) console.log(`Initialized MiniGit repository at ${repo.root}`);
+  console.log(`MiniGit server listening on http://${host}:${port} (repo ${repo.root})`);
+});
