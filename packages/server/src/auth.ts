@@ -1,7 +1,7 @@
-import {createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual} from 'node:crypto';
+import {createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
 import type {Request, Response} from 'express';
-import {database} from './database.js';
+import {sessions, users} from './database.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'aiverse_session';
@@ -9,7 +9,8 @@ const CSRF_COOKIE = 'aiverse_csrf';
 const SESSION_DAYS = 14;
 
 function cookieOptions(httpOnly: boolean, expires?: Date) {
-  return {httpOnly, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, path: '/', expires};
+  const secure = process.env.NODE_ENV === 'production';
+  return {httpOnly, secure, sameSite: secure ? 'none' as const : 'lax' as const, path: '/', expires};
 }
 
 function csrfMatches(request: Request): boolean {
@@ -26,8 +27,13 @@ export function requireCsrf(request: Request, response: Response): boolean {
   return false;
 }
 
+function publicUser(user: Record<string, unknown>) {
+  const {_id, passwordHash: _passwordHash, ...safeUser} = user;
+  return safeUser;
+}
+
 export async function createAccount(input: {username: unknown; email: unknown; password: unknown; displayName?: unknown}) {
-  if (!database) throw new Error('Account storage is unavailable; configure DATABASE_URL.');
+  if (!users) throw new Error('El almacenamiento de cuentas no está disponible; configura MONGODB_URI.');
   const username = typeof input.username === 'string' ? input.username.trim().toLowerCase() : '';
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
   const password = typeof input.password === 'string' ? input.password : '';
@@ -38,56 +44,52 @@ export async function createAccount(input: {username: unknown; email: unknown; p
   if (!displayName || displayName.length > 80) throw new Error('El nombre visible no es válido.');
   const salt = randomBytes(16);
   const digest = await scrypt(password, salt, 64) as Buffer;
-  const passwordHash = `scrypt$${salt.toString('base64')}$${digest.toString('base64')}`;
-  const result = await database.query(
-    'INSERT INTO users(username,email,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id,username,email,display_name,bio,language,created_at',
-    [username, email, passwordHash, displayName],
-  );
-  return result.rows[0] as Record<string, unknown>;
+  const user = {id: randomUUID(), username, email, passwordHash: `scrypt$${salt.toString('base64')}$${digest.toString('base64')}`,
+    display_name: displayName, bio: '', language: 'es', plan: 'free', created_at: new Date()};
+  try { await users.insertOne(user); }
+  catch (error) {
+    if ((error as {code?: number}).code === 11000) throw new Error('Ese nombre de usuario o correo ya está registrado.');
+    throw error;
+  }
+  return publicUser(user);
 }
 
 export async function createSession(userId: string, response: Response): Promise<void> {
-  if (!database) throw new Error('Account storage is unavailable; configure DATABASE_URL.');
+  if (!sessions) throw new Error('El almacenamiento de sesiones no está disponible; configura MONGODB_URI.');
   const token = randomBytes(32).toString('base64url');
   const csrf = randomBytes(32).toString('base64url');
-  const expires = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
-  await database.query('INSERT INTO sessions(user_id,token_hash,expires_at) VALUES($1,$2,$3)',
-    [userId, createHash('sha256').update(token).digest('hex'), expires]);
-  response.cookie(SESSION_COOKIE, token, cookieOptions(true, expires));
-  response.cookie(CSRF_COOKIE, csrf, cookieOptions(false, expires));
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await sessions.insertOne({id: randomUUID(), userId, tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt, createdAt: new Date()});
+  response.cookie(SESSION_COOKIE, token, cookieOptions(true, expiresAt));
+  response.cookie(CSRF_COOKIE, csrf, cookieOptions(false, expiresAt));
 }
 
 export async function login(input: {email: unknown; password: unknown}) {
-  if (!database) throw new Error('Account storage is unavailable; configure DATABASE_URL.');
+  if (!users) throw new Error('El almacenamiento de cuentas no está disponible; configura MONGODB_URI.');
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
   const password = typeof input.password === 'string' ? input.password : '';
-  const result = await database.query('SELECT id,username,email,display_name,bio,language,password_hash FROM users WHERE email=$1', [email]);
-  if (!result.rowCount) throw new Error('Correo o contraseña incorrectos.');
-  const user = result.rows[0] as Record<string, string>;
-  const [scheme, saltText, digestText] = user.password_hash.split('$');
-  const expected = Buffer.from(digestText, 'base64');
-  const candidate = scheme === 'scrypt' ? await scrypt(password, Buffer.from(saltText, 'base64'), expected.length) as Buffer : Buffer.alloc(expected.length);
+  const user = await users.findOne({email});
+  if (!user) throw new Error('Correo o contraseña incorrectos.');
+  const [scheme, saltText, digestText] = String(user.passwordHash).split('$');
+  const expected = Buffer.from(digestText ?? '', 'base64');
+  const candidate = scheme === 'scrypt' && expected.length ? await scrypt(password, Buffer.from(saltText, 'base64'), expected.length) as Buffer : Buffer.alloc(expected.length);
   if (scheme !== 'scrypt' || candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) throw new Error('Correo o contraseña incorrectos.');
-  delete user.password_hash;
-  return user;
+  return publicUser(user);
 }
 
 export async function currentUser(request: Request): Promise<Record<string, unknown> | null> {
-  if (!database) return null;
+  if (!sessions || !users) return null;
   const token = request.cookies?.[SESSION_COOKIE];
   if (!token) return null;
-  const result = await database.query(
-    `SELECT u.id,u.username,u.email,u.display_name,u.bio,u.language,u.created_at
-     FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()`,
-    [createHash('sha256').update(token).digest('hex')],
-  );
-  return result.rows[0] as Record<string, unknown> ?? null;
+  const session = await sessions.findOne({tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: {$gt: new Date()}});
+  if (!session) return null;
+  const user = await users.findOne({id: session.userId});
+  return user ? publicUser(user) : null;
 }
 
 export async function destroySession(request: Request, response: Response): Promise<void> {
   const token = request.cookies?.[SESSION_COOKIE];
-  if (database && token) await database.query('DELETE FROM sessions WHERE token_hash=$1', [createHash('sha256').update(token).digest('hex')]);
+  if (sessions && token) await sessions.deleteOne({tokenHash: createHash('sha256').update(token).digest('hex')});
   response.clearCookie(SESSION_COOKIE, cookieOptions(true));
   response.clearCookie(CSRF_COOKIE, cookieOptions(false));
 }
-

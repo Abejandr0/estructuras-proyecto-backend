@@ -12,16 +12,22 @@ import type {AITask, AITaskKind} from './ai.js';
 import {AITaskQueue, GeminiProvider, OpenAIProvider} from './ai.js';
 import {resolveRepository} from './repository-root.js';
 import {Repository} from '@minigit/core';
-import {database, initializeDatabase} from './database.js';
+import {activities, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
 import {createAccount, createSession, currentUser, destroySession, login, requireCsrf} from './auth.js';
 
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
 const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
 const port = Number(process.env.PORT ?? 4179);
-const host = process.env.HOST ?? '127.0.0.1';
+const host = process.env.HOST ?? '0.0.0.0';
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({server, path: '/api/events'});
+function isAllowedWebOrigin(origin: string): boolean {
+  const configuredOrigins = (process.env.WEB_ORIGIN ?? '').split(',').map(value => value.trim()).filter(Boolean);
+  return new Set(['http://localhost:5173', 'http://127.0.0.1:5173', ...configuredOrigins]).has(origin);
+}
+const wss = new WebSocketServer({server, path: '/api/events', verifyClient: ({origin}, callback) => {
+  callback(!origin || isAllowedWebOrigin(origin), origin && !isAllowedWebOrigin(origin) ? 403 : 0, 'Origin not allowed');
+}});
 
 function broadcast(event: unknown): void {
   const payload = JSON.stringify(event);
@@ -39,14 +45,14 @@ const aiTasks = new AITaskQueue(provider, Number(process.env.AI_CONCURRENCY ?? 2
   (task: AITask) => broadcast({type: 'ai-task', task}));
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(helmet({crossOriginResourcePolicy: {policy: 'same-site'}}));
 app.use(express.json({limit: '2mb'}));
 app.use(cookieParser());
 app.use((request, response, next) => {
   const origin = request.headers.origin;
-  const allowed = new Set(['http://localhost:5173', 'http://127.0.0.1:5173', process.env.WEB_ORIGIN].filter(Boolean));
-  if (origin && allowed.has(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Credentials', 'true'); }
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (origin && isAllowedWebOrigin(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Credentials', 'true'); response.setHeader('Vary', 'Origin'); }
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   next();
 });
@@ -55,12 +61,13 @@ app.options('*', (_request, response) => response.sendStatus(204));
 app.get('/api/health', (_request, response) => response.json({ok: true, root: repo.root, provider: externalAIEnabled ? aiProvider : 'unconfigured'}));
 app.get('/api/auth/csrf', (_request, response) => {
   const token = randomUUID() + randomUUID();
-  response.cookie('aiverse_csrf', token, {httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/'});
+  const secure = process.env.NODE_ENV === 'production';
+  response.cookie('aiverse_csrf', token, {httpOnly: false, secure, sameSite: secure ? 'none' : 'lax', path: '/'});
   response.json({csrfToken: token});
 });
 app.get('/api/health/ready', async (_request, response) => {
-  if (!database) { response.status(503).json({ok: false, database: 'DATABASE_URL is not configured'}); return; }
-  try { await database.query('SELECT 1'); response.json({ok: true, database: 'connected'}); }
+  if (!database) { response.status(503).json({ok: false, database: 'MONGODB_URI is not configured'}); return; }
+  try { await database.command({ping: 1}); response.json({ok: true, database: 'connected'}); }
   catch { response.status(503).json({ok: false, database: 'unavailable'}); }
 });
 app.get('/api/repo/status', async (_request, response, next) => { try { response.json(await repo.status()); } catch (error) { next(error); } });
@@ -107,84 +114,90 @@ app.get('/api/auth/me', async (request, response, next) => {
 
 app.get('/api/feed', async (_request, response, next) => {
   try {
-    if (!database) { response.status(503).json({error: 'Configura DATABASE_URL para habilitar el feed.'}); return; }
-    const result = await database.query(
-      `SELECT r.id,r.name,r.description,r.stars_count,r.created_at,u.username,u.display_name
-       FROM repositories r JOIN users u ON u.id=r.owner_id WHERE r.is_public=true
-       ORDER BY r.stars_count DESC,r.created_at DESC LIMIT 50`,
-    );
-    response.json({repositories: result.rows});
+    if (!repositories || !users) { response.status(503).json({error: 'Configura MONGODB_URI para habilitar el feed.'}); return; }
+    const items = await repositories.find({isPublic: true}).sort({starsCount: -1, createdAt: -1}).limit(50).toArray();
+    const owners = await users.find({id: {$in: items.map(item => item.ownerId)}}).project({id: 1, username: 1, display_name: 1}).toArray();
+    const ownerById = new Map(owners.map(owner => [owner.id, owner]));
+    response.json({repositories: items.map(item => ({id: item.id, name: item.name, description: item.description, stars_count: item.starsCount, created_at: item.createdAt,
+      username: ownerById.get(item.ownerId)?.username ?? 'unknown', display_name: ownerById.get(item.ownerId)?.display_name ?? ''}))});
   } catch (error) { next(error); }
 });
 app.post('/api/repositories', async (request, response, next) => {
   try {
     if (!requireCsrf(request, response)) return;
-    if (!database) { response.status(503).json({error: 'Configura DATABASE_URL para crear repositorios.'}); return; }
+    if (!repositories || !users) { response.status(503).json({error: 'Configura MONGODB_URI para crear repositorios.'}); return; }
     const user = await currentUser(request);
     if (!user) { response.status(401).json({error: 'Inicia sesión para continuar.'}); return; }
     const name = typeof request.body?.name === 'string' ? request.body.name.trim() : '';
     const description = typeof request.body?.description === 'string' ? request.body.description.trim() : '';
     if (!/^[A-Za-z0-9._-]{1,100}$/.test(name) || description.length > 350) { response.status(400).json({error: 'Nombre o descripción no válidos.'}); return; }
-    const result = await database.query(
-      `INSERT INTO repositories(owner_id,name,description,is_public) VALUES($1,$2,$3,$4)
-       RETURNING id,name,description,is_public,disk_key,created_at`,
-      [user.id,name,description,request.body?.isPublic !== false],
-    );
-    const repositoryRoot = path.join(repo.root, 'aiverse-repositories', String(result.rows[0].disk_key));
-    await mkdir(path.dirname(repositoryRoot), {recursive: true});
-    await Repository.init(repositoryRoot);
-    response.status(201).json({repository: result.rows[0]});
+    const plan = String(user.plan ?? 'free');
+    const repositoryLimit = plan === 'pro' ? Infinity : plan === 'plus' ? 20 : 3;
+    const quotaFilter = repositoryLimit === Infinity ? {id: user.id} : {id: user.id, $expr: {$lt: [{$ifNull: ['$repositoryCount', 0]}, repositoryLimit]}};
+    const quotaReservation = await users.updateOne(quotaFilter, {$inc: {repositoryCount: 1}});
+    if (!quotaReservation.modifiedCount) { response.status(403).json({error: `Tu plan ${plan} permite hasta ${repositoryLimit} repositorios. Actualiza tu plan para crear más.`}); return; }
+    const repository = {id: randomUUID(), ownerId: user.id, name, description, isPublic: request.body?.isPublic !== false,
+      diskKey: randomUUID(), starsCount: 0, createdAt: new Date()};
+    try {
+      await repositories.insertOne(repository);
+      const repositoryRoot = path.join(repo.root, 'aiverse-repositories', String(repository.diskKey));
+      await mkdir(path.dirname(repositoryRoot), {recursive: true});
+      await Repository.init(repositoryRoot);
+    } catch (error) {
+      await repositories.deleteOne({id: repository.id});
+      await users.updateOne({id: user.id}, {$inc: {repositoryCount: -1}});
+      if ((error as {code?: number}).code === 11000) { response.status(409).json({error: 'Ya tienes un repositorio con ese nombre.'}); return; }
+      throw error;
+    }
+    response.status(201).json({repository: {...repository, disk_key: repository.diskKey, is_public: repository.isPublic}});
   } catch (error) { next(error); }
 });
 app.get('/api/pull-requests', async (request, response, next) => {
   try {
-    if (!database) { response.status(503).json({error: 'Configura DATABASE_URL para habilitar los PRs.'}); return; }
+    if (!pullRequests || !repositories || !users) { response.status(503).json({error: 'Configura MONGODB_URI para habilitar los PRs.'}); return; }
     const repositoryId = typeof request.query.repositoryId === 'string' ? request.query.repositoryId : '';
-    const result = await database.query(
-      `SELECT p.*,u.username FROM pull_requests p JOIN users u ON u.id=p.author_id
-       JOIN repositories r ON r.id=p.repository_id WHERE ($1='' OR r.id=$1) AND (r.is_public=true OR r.owner_id=$2)
-       ORDER BY p.created_at DESC LIMIT 100`,
-      [repositoryId,(await currentUser(request))?.id ?? null],
-    );
-    response.json({pullRequests: result.rows});
+    const user = await currentUser(request);
+    const repoFilter = repositoryId ? {id: repositoryId} : {};
+    const visibleRepos = await repositories.find({...repoFilter, $or: [{isPublic: true}, {ownerId: user?.id ?? null}]}).project({id: 1}).toArray();
+    const items = await pullRequests.find({repositoryId: {$in: visibleRepos.map(item => item.id)}}).sort({createdAt: -1}).limit(100).toArray();
+    const authors = await users.find({id: {$in: items.map(item => item.authorId)}}).project({id: 1, username: 1}).toArray();
+    const authorById = new Map(authors.map(author => [author.id, author.username]));
+    response.json({pullRequests: items.map(item => ({...item, username: authorById.get(item.authorId) ?? 'unknown'}))});
   } catch (error) { next(error); }
 });
 app.post('/api/pull-requests', async (request, response, next) => {
   try {
     if (!requireCsrf(request, response)) return;
-    if (!database) { response.status(503).json({error: 'Configura DATABASE_URL para habilitar los PRs.'}); return; }
+    if (!pullRequests || !repositories || !activities) { response.status(503).json({error: 'Configura MONGODB_URI para habilitar los PRs.'}); return; }
     const user = await currentUser(request);
     if (!user) { response.status(401).json({error: 'Inicia sesión para continuar.'}); return; }
     const {repositoryId, title, body, sourceBranch, targetBranch} = request.body ?? {};
     if (![repositoryId,title,sourceBranch,targetBranch].every(value => typeof value === 'string' && value.trim().length > 0) || title.length > 180 || String(body ?? '').length > 20_000) {
       response.status(400).json({error: 'Datos del pull request no válidos.'}); return;
     }
-    const repository = await database.query('SELECT id FROM repositories WHERE id=$1 AND owner_id=$2', [repositoryId,user.id]);
-    if (!repository.rowCount) { response.status(404).json({error: 'Repositorio no encontrado o sin permisos.'}); return; }
-    const result = await database.query(
-      `INSERT INTO pull_requests(repository_id,author_id,title,body,source_branch,target_branch)
-       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [repositoryId,user.id,title.trim(),String(body ?? ''),sourceBranch.trim(),targetBranch.trim()],
-    );
-    await database.query('INSERT INTO activity_events(actor_id,repository_id,kind,payload) VALUES($1,$2,$3,$4)',
-      [user.id,repositoryId,'pull_request_opened',JSON.stringify({pullRequestId:result.rows[0].id,title})]);
-    response.status(201).json({pullRequest: result.rows[0]});
+    const repository = await repositories.findOne({id: repositoryId, ownerId: user.id});
+    if (!repository) { response.status(404).json({error: 'Repositorio no encontrado o sin permisos.'}); return; }
+    const pullRequest = {id: randomUUID(), repositoryId, authorId: user.id, title: title.trim(), body: String(body ?? ''),
+      sourceBranch: sourceBranch.trim(), targetBranch: targetBranch.trim(), status: 'open', createdAt: new Date(), updatedAt: new Date()};
+    await pullRequests.insertOne(pullRequest);
+    await activities.insertOne({id: randomUUID(), actorId: user.id, repositoryId, kind: 'pull_request_opened', payload: {pullRequestId: pullRequest.id, title}, createdAt: new Date()});
+    response.status(201).json({pullRequest});
   } catch (error) { next(error); }
 });
 app.post('/api/pull-requests/:id/reviews', async (request, response, next) => {
   try {
     if (!requireCsrf(request, response)) return;
-    if (!database) { response.status(503).json({error: 'Configura DATABASE_URL para habilitar las revisiones.'}); return; }
+    if (!pullRequests || !repositories || !reviews) { response.status(503).json({error: 'Configura MONGODB_URI para habilitar las revisiones.'}); return; }
     const user = await currentUser(request);
     if (!user) { response.status(401).json({error: 'Inicia sesión para continuar.'}); return; }
     const {body, state} = request.body ?? {};
     if (typeof body !== 'string' || body.length > 20_000 || !['commented','approved','changes_requested'].includes(state)) { response.status(400).json({error: 'Revisión no válida.'}); return; }
-    const access = await database.query(`SELECT p.id FROM pull_requests p JOIN repositories r ON r.id=p.repository_id
-      WHERE p.id=$1 AND (p.author_id=$2 OR r.owner_id=$2)`, [request.params.id,user.id]);
-    if (!access.rowCount) { response.status(404).json({error: 'PR no encontrado o sin permisos.'}); return; }
-    const result = await database.query('INSERT INTO pull_request_reviews(pull_request_id,reviewer_id,body,state) VALUES($1,$2,$3,$4) RETURNING *',
-      [request.params.id,user.id,body,state]);
-    response.status(201).json({review: result.rows[0]});
+    const pullRequest = await pullRequests.findOne({id: request.params.id});
+    const repository = pullRequest ? await repositories.findOne({id: pullRequest.repositoryId}) : null;
+    if (!pullRequest || (pullRequest.authorId !== user.id && repository?.ownerId !== user.id)) { response.status(404).json({error: 'PR no encontrado o sin permisos.'}); return; }
+    const review = {id: randomUUID(), pullRequestId: request.params.id, reviewerId: user.id, body, state, createdAt: new Date()};
+    await reviews.insertOne(review);
+    response.status(201).json({review});
   } catch (error) { next(error); }
 });
 
@@ -230,7 +243,7 @@ try {
   });
 } catch { /* Explicit API refresh remains available on filesystems without recursive watch. */ }
 
-if (database) await initializeDatabase();
+if (process.env.MONGODB_URI) await initializeDatabase();
 server.listen(port, host, () => {
   if (initialized) console.log(`Initialized MiniGit repository at ${repo.root}`);
   console.log(`MiniGit server listening on http://${host}:${port} (repo ${repo.root})`);

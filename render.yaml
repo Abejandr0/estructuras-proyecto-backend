@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: aiverse-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health/ready
+    disk:
+      name: aiverse-repositories
+      mountPath: /srv/aiverse
+      sizeGB: 10
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: MINIGIT_REPO
+        value: /srv/aiverse
+      - key: AI_PROVIDER
+        value: gemini
+      - key: AI_ALLOW_NETWORK
+        value: "false"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: MONGODB_URI
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

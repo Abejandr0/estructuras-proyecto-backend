@@ -1,20 +1,19 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: mongo:8
     restart: unless-stopped
     environment:
-      POSTGRES_DB: aiverse
-      POSTGRES_USER: aiverse
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      MONGO_INITDB_ROOT_USERNAME: aiverse
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD in .env}
     volumes:
-      - aiverse-db:/var/lib/postgresql/data
+      - aiverse-db:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aiverse -d aiverse"]
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\""]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 20
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:27017:27017"
   backend:
     build: .
     restart: unless-stopped
@@ -25,7 +24,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4179
-      DATABASE_URL: postgresql://aiverse:${POSTGRES_PASSWORD}@db:5432/aiverse
+      MONGODB_URI: mongodb://aiverse:${MONGO_PASSWORD}@db:27017/aiverse?authSource=admin
       MINIGIT_REPO: /srv/aiverse
       AI_PROVIDER: gemini
       AI_ALLOW_NETWORK: ${AI_ALLOW_NETWORK:-false}
@@ -40,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4179}
     restart: unless-stopped
     depends_on: [backend]
     ports:
