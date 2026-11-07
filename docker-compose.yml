@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aiverse
+      POSTGRES_USER: aiverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - aiverse-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiverse -d aiverse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5432:5432"
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4179
+      DATABASE_URL: postgresql://aiverse:${POSTGRES_PASSWORD}@db:5432/aiverse
+      MINIGIT_REPO: /srv/aiverse
+      AI_PROVIDER: gemini
+      AI_ALLOW_NETWORK: ${AI_ALLOW_NETWORK:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+    volumes:
+      - aiverse-repositories:/srv/aiverse
+    ports:
+      - "127.0.0.1:4179:4179"
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "127.0.0.1:5173:80"
+volumes:
+  aiverse-db:
+  aiverse-repositories:

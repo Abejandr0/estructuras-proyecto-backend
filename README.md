@@ -12,7 +12,19 @@ npm run dev:server # inicializa .minigit en la raíz si hace falta, puerto 4179
 npm run dev:web    # Vite
 ```
 
-Abre `http://localhost:5173`. El servidor local escucha en `127.0.0.1:4179`. Para servir otro repositorio usa `MINIGIT_REPO=/ruta/al/repo npm run dev:server`. La IA funciona en modo heurístico sin configuración. El proveedor externo solo se habilita cuando están definidas `AI_ALLOW_NETWORK=true` y `OPENAI_API_KEY`; así los diffs no salen del equipo por accidente.
+Abre `http://localhost:5173`. El servidor local escucha en `127.0.0.1:4179`. Para servir otro repositorio usa `MINIGIT_REPO=/ruta/al/repo npm run dev:server`. No se finge una respuesta de IA: configura `GEMINI_API_KEY` y `AI_ALLOW_NETWORK=true` en `.env` para habilitar Gemini. La clave solo la lee el backend.
+
+## AIVerse y despliegue local
+
+La app usa PostgreSQL para cuentas, sesiones, perfiles, repositorios, estrellas, actividad y PRs. El contenido versionado vive como objetos MiniGit en un volumen de almacenamiento del backend, no como filas SQL. La inicialización de esquema actual es automática al arrancar; en producción debe sustituirse por migraciones versionadas antes de ampliar el esquema.
+
+```sh
+cp .env.example .env
+# Edita POSTGRES_PASSWORD y agrega la clave que obtengas de Gemini.
+docker compose up --build
+```
+
+La web quedará en `http://localhost:5173`, PostgreSQL sólo escuchará en loopback y el backend se publica detrás del proxy web. Para un dominio real, configura `WEB_ORIGIN`, HTTPS y cookies seguras. No subas `.env` al repositorio.
 
 CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `merge`, `stash`, `reset`, `revert`, `serve`, `clone`, `push`, `pull`. Para remoto, inicia `minigit serve` dentro del repo del servidor y usa la URL HTTP en clone/push/pull.
 

@@ -3,7 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "scripts": {"build": "npm run build -w @minigit/core && npm run build -w @minigit/cli && npm run build -w @minigit/server && npm run build -w @minigit/web", "test": "vitest run", "bench": "tsx benchmarks/run.ts", "dev:server": "npm run dev -w @minigit/server", "dev:web": "npm run dev -w @minigit/web"},
-  "devDependencies": {"@types/node": "^22.10.0", "@types/react": "^18.3.12", "@types/react-dom": "^18.3.1", "tsx": "^4.19.2", "typescript": "^5.7.2", "vitest": "^2.1.8"}
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @minigit/core && npm run build -w @minigit/cli && npm run build -w @minigit/server && npm run build -w @minigit/web",
+    "test": "vitest run",
+    "bench": "tsx benchmarks/run.ts",
+    "dev:server": "npm run dev -w @minigit/server",
+    "dev:web": "npm run dev -w @minigit/web"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express-rate-limit": "^8.7.3",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.1"
+  }
 }

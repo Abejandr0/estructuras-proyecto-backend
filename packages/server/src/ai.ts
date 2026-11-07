@@ -55,6 +55,26 @@ export class OpenAIProvider implements AIProvider {
   }
 }
 
+export class GeminiProvider implements AIProvider {
+  constructor(private readonly apiKey: string, private readonly model: string) {}
+  async run(kind: AITaskKind, input: string): Promise<string> {
+    const instruction: Record<AITaskKind, string> = {
+      review: 'Revisa este diff como senior engineer. Devuelve solo hallazgos concretos y priorizados en español.',
+      'commit-msg': 'Propón un mensaje de commit imperativo de máximo 72 caracteres.',
+      resolve: 'Analiza los conflictos y propone una resolución explicando los riesgos.',
+    };
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({systemInstruction: {parts: [{text: instruction[kind]}]}, contents: [{role: 'user', parts: [{text: input}]}]}),
+    });
+    if (!response.ok) throw new Error(`Gemini responded with ${response.status}`);
+    const data = await response.json() as {candidates?: Array<{content?: {parts?: Array<{text?: string}>}}>} ;
+    const text = data.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('').trim();
+    if (!text) throw new Error('Gemini returned an empty response');
+    return text;
+  }
+}
+
 export class AITaskQueue {
   private readonly pending = new Queue<AITask>();
   private readonly tasks = new Map<string, AITask>();

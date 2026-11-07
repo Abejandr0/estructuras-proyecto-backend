@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import type {FormEvent} from 'react';
 import {motion} from 'framer-motion';
 
 type Commit = {hash: string; commit: {message: string; date: string; parents: string[]}};
@@ -12,19 +13,24 @@ const api = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4179';
 const wsUrl = api.replace(/^http/, 'ws') + '/api/events';
 
 async function getJSON<T>(route: string): Promise<T> {
-  const response = await fetch(api + route);
+  const response = await fetch(api + route, {credentials: 'include'});
   if (!response.ok) throw new Error((await response.json() as {error?: string}).error ?? response.statusText);
   return response.json() as Promise<T>;
 }
 
 async function postJSON<T>(route: string, body: unknown): Promise<T> {
-  const response = await fetch(api + route, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const csrf = document.cookie.split('; ').find(value => value.startsWith('aiverse_csrf='))?.split('=').slice(1).join('=') ?? '';
+  const response = await fetch(api + route, {method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf)}, body: JSON.stringify(body)});
   const result = await response.json() as T & {error?: string};
   if (!response.ok) throw new Error(result.error ?? response.statusText);
   return result;
 }
 
 export default function App() {
+  const [page, setPage] = useState<'home'|'feed'|'workspace'|'login'|'register'|'account'|'settings'|'prs'>('home');
+  const [feed, setFeed] = useState<Array<{id:string;name:string;description:string;stars_count:number;username:string}>>([]);
+  const [user, setUser] = useState<{username:string;display_name:string;email:string}|null>(null);
+  const [formError, setFormError] = useState('');
   const [log, setLog] = useState<Commit[]>([]);
   const [files, setFiles] = useState<Entry[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
@@ -57,6 +63,9 @@ export default function App() {
 
   useEffect(() => {
     void refresh();
+    void getJSON('/api/auth/csrf');
+    void getJSON<{user: typeof user}>('/api/auth/me').then(result=>setUser(result.user));
+    void getJSON<{repositories: typeof feed}>('/api/feed').then(result=>setFeed(result.repositories)).catch(()=>undefined);
     const socket = new WebSocket(wsUrl);
     socket.onmessage = event => {
       const message = JSON.parse(event.data as string) as {type?: string; task?: AITask};
@@ -110,9 +119,22 @@ export default function App() {
     } catch (aiError) { setError(aiError instanceof Error ? aiError.message : String(aiError)); }
   };
 
+  const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setFormError(''); const data = new FormData(event.currentTarget);
+    try {
+      const route = page === 'register' ? '/api/auth/register' : '/api/auth/login';
+      const body = page === 'register' ? {username:data.get('username'),displayName:data.get('displayName'),email:data.get('email'),password:data.get('password')} : {email:data.get('email'),password:data.get('password')};
+      const result = await postJSON<{user: typeof user}>(route,body); setUser(result.user); setPage('account');
+    } catch (cause) { setFormError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+
+  if (page === 'login' || page === 'register') return <main className="auth-page"><div className="auth-card"><button className="wordmark" onClick={()=>setPage('home')}>◈ AIVerse</button><h1>{page==='login'?'Inicia sesión':'Crea tu cuenta'}</h1><p>Versionamiento, colaboración y revisión de código con IA.</p><form onSubmit={event=>void submitAuth(event)}>{page==='register'&&<><label>Usuario<input name="username" required minLength={1} maxLength={39} autoComplete="username"/></label><label>Nombre visible<input name="displayName" required maxLength={80} autoComplete="name"/></label></>}<label>Correo<input name="email" type="email" required maxLength={254} autoComplete="email"/></label><label>Contraseña<input name="password" type="password" required minLength={12} maxLength={256} autoComplete={page==='register'?'new-password':'current-password'}/></label>{formError&&<p className="form-error">{formError}</p>}<button className="action">{page==='login'?'Entrar':'Crear cuenta'}</button></form><button className="text-button" onClick={()=>setPage(page==='login'?'register':'login')}>{page==='login'?'Crear cuenta nueva':'Ya tengo cuenta'}</button></div></main>;
+
+  if (page === 'home' || page === 'feed' || page === 'account' || page === 'settings' || page === 'prs') return <main className={dark?'app dark':'app'}><header><button className="wordmark" onClick={()=>setPage('home')}>◈ AIVerse</button><nav>{(['home','feed','prs'] as const).map(item=><button className="nav-button" key={item} onClick={()=>setPage(item)}>{item==='home'?'Inicio':item==='feed'?'Explorar':'Pull requests'}</button>)}</nav><div className="header-right"><button className="nav-button" onClick={()=>setPage('settings')}>Configuración</button><button className="branch" onClick={()=>setPage(user?'account':'login')}>{user?.username??'Iniciar sesión'}</button><button className="action small" onClick={()=>setPage('workspace')}>Abrir espacio</button></div></header>{page==='settings'?<section className="product-page"><h1>Configuración de AIVerse</h1><p>Preferencias de interfaz</p><label>Idioma<select onChange={event=>localStorage.setItem('aiverse-language',event.target.value)} defaultValue={localStorage.getItem('aiverse-language')??'es'}>{[['es','Español'],['en','English'],['fr','Français'],['de','Deutsch'],['pt','Português'],['ja','日本語']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label className="theme-setting">Tema <button className="secondary action" onClick={()=>setDark(!dark)}>{dark?'Oscuro':'Claro'} · cambiar</button></label><p>El cambio de idioma se guarda localmente; se completará la traducción de todos los paneles en la siguiente pasada.</p></section>:page==='account'?<section className="product-page"><h1>{user?.display_name??'Tu cuenta'}</h1><p>@{user?.username} · {user?.email}</p><button className="action" onClick={()=>setPage('settings')}>Editar preferencias</button></section>:page==='prs'?<section className="product-page"><h1>Pull requests</h1><p>Las solicitudes de cambio y las revisiones de código aparecen aquí.</p><button className="action" onClick={()=>setPage('login')}>Inicia sesión para crear un PR</button></section>:<><section className="hero"><p className="eyebrow">DONDE EL CÓDIGO EVOLUCIONA</p><h1>Construye en equipo.<br/><span>Revisa con inteligencia.</span></h1><p>Versiona proyectos, comparte tu trabajo y revisa cambios con Gemini.</p><div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>Empieza gratis</button><button className="secondary action" onClick={()=>setPage('feed')}>Explorar proyectos</button></div></section><section className="product-page"><h2>{page==='feed'?'Proyectos populares':'Explora repositorios'}</h2><div className="repo-grid">{feed.map(item=><article className="repo-card" key={item.id}><b>{item.username}/{item.name}</b><p>{item.description||'Repositorio público de AIVerse.'}</p><small>☆ {item.stars_count} · código versionado</small></article>)}</div>{feed.length===0&&<p>El feed se llenará cuando se publiquen repositorios en AIVerse.</p>}</section></>}<footer>AIVerse · Repositorios, revisiones y colaboración</footer></main>;
+
   return <main className={dark ? 'app dark' : 'app'}>
     <header>
-      <div className="brand"><span className="logo">M</span><div><b>MiniGit</b><small>{health?.root ?? 'Conectando al repositorio…'}</small></div></div>
+      <div className="brand"><span className="logo">A</span><div><b>AIVerse</b><small>{health?.root ?? 'Conectando al repositorio…'}</small></div></div>
       <div className="header-right"><span className={error ? 'connection offline' : 'connection'}>● {error ? 'sin conexión' : 'servidor local'}</span><span className="branch">⌘ {status.branch}</span><button onClick={() => setDark(!dark)} aria-label="Cambiar tema">{dark ? '☀' : '◐'}</button></div>
     </header>
     {error && <div className="error-banner">No se pudo conectar con MiniGit: {error}. Ejecuta <code>npm run dev:server</code>.</div>}
