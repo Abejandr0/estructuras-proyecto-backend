@@ -1,2 +1,159 @@
-import{useEffect,useState}from'react';import{motion}from'framer-motion';type Commit={hash:string;commit:{message:string;date:string;parents:string[]}};type Entry={path:string;hash:string};const api='http://localhost:4179';
-export default function App(){const[log,setLog]=useState<Commit[]>([]),[files,setFiles]=useState<Entry[]>([]),[status,setStatus]=useState<{branch:string;untracked:string[];modified:string[]}>({branch:'main',untracked:[],modified:[]}),[selected,setSelected]=useState(''),[content,setContent]=useState(''),[terminal,setTerminal]=useState(''),[output,setOutput]=useState<string[]>([]),[ai,setAi]=useState(''),[dark,setDark]=useState(false),[buckets,setBuckets]=useState<number[]>([]);const refresh=async()=>{try{const [l,f,s,b]=await Promise.all([fetch(api+'/api/repo/log').then(r=>r.json()),fetch(api+'/api/repo/tree').then(r=>r.json()),fetch(api+'/api/repo/status').then(r=>r.json()),fetch(api+'/api/structures').then(r=>r.json())]);setLog(l);setFiles(f);setStatus(s);setBuckets(b.objectBuckets)}catch{}};useEffect(()=>{if(selected)void fetch(api+'/api/repo/file?path='+encodeURIComponent(selected)).then(r=>r.json()).then((x:{content?:string})=>setContent(x.content??'No se pudo cargar el archivo'));else setContent('')},[selected]);useEffect(()=>{void refresh();const socket=new WebSocket('ws://localhost:4179/api/events');socket.onmessage=()=>void refresh();return()=>socket.close()},[]);const run=async()=>{const [cmd,...args]=terminal.trim().split(/\s+/);try{let r:Response;if(cmd==='status')r=await fetch(api+'/api/repo/status');else if(cmd==='log')r=await fetch(api+'/api/repo/log');else if(cmd==='add')r=await fetch(api+'/api/repo/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:args.length?args:['.']})});else if(cmd==='commit')r=await fetch(api+'/api/repo/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:args.join(' ').replace(/^-m\s*/, '')})});else throw new Error('Comandos web: status, log, add [ruta], commit <mensaje>');const result=await r.json();setOutput(x=>[JSON.stringify(result),...x]);await refresh()}catch(e){setOutput(x=>[String(e),...x])}setTerminal('')};const requestAI=async(kind:string)=>{const r=await fetch(api+'/api/ai/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:kind==='commit-msg'?'Actualizar archivos y mejorar el proyecto':'',diff:JSON.stringify({files,status})})});setAi(JSON.stringify(await r.json(),null,2))};return <main className={dark?'app dark':'app'}><header><div className="brand"><span className="logo">M</span><div><b>MiniGit</b><small>Control de versiones local</small></div></div><div className="header-right"><span className="branch">⌘ {status.branch}</span><button onClick={()=>setDark(!dark)}>{dark?'☀':'◐'}</button></div></header><section className="workspace"><aside className="sidebar"><div className="side-title">EXPLORADOR <span>⌕</span></div>{files.map(f=><button className={selected===f.path?'file active':'file'} key={f.path} onClick={()=>setSelected(f.path)}>◈ {f.path}</button>)}{!files.length&&<p className="muted">Aún no hay archivos confirmados</p>}<div className="side-title branch-heading">RAMAS</div><div className="file">◉ {status.branch}</div></aside><section className="center"><div className="panel-head"><span>Grafo de commits</span><small>{log.length} confirmaciones</small></div><div className="graph"><svg viewBox={`0 0 640 ${Math.max(150,log.length*74)}`} preserveAspectRatio="xMinYMin meet"><line x1="32" y1="30" x2="32" y2={Math.max(50,log.length*74-24)} stroke="#6971ff" strokeWidth="3"/>{log.map((item,i)=><motion.g key={item.hash} initial={{opacity:0,x:-12}} animate={{opacity:1,x:0}} transition={{delay:i*.06}}><circle cx="32" cy={36+i*74} r="9" fill="#746bff"/><text x="56" y={32+i*74} className="commit-msg">{item.commit.message.slice(0,56)}</text><text x="56" y={51+i*74} className="commit-meta">{item.hash.slice(0,8)} · {new Date(item.commit.date).toLocaleString('es-CO')}</text></motion.g>)}</svg>{!log.length&&<p className="empty">Tu historial aparecerá aquí después del primer commit.</p>}</div><div className="editor"><div className="panel-head"><span>{selected||'Vista previa'}</span><small>Diff de archivos</small></div><pre>{selected?content:'Selecciona un archivo para inspeccionar su historial.'}</pre></div></section><aside className="right"><div className="panel-head">Asistente IA <span className="online">● heurístico</span></div><p className="muted">Revisión del estado actual y sugerencias de mensaje.</p><button className="action" onClick={()=>void requestAI('review')}>Revisar cambios</button><button className="action secondary" onClick={()=>void requestAI('commit-msg')}>Sugerir mensaje</button><pre className="ai-result">{ai||'La revisión aparecerá aquí.'}</pre><div className="inspector"><div className="panel-head">Data Structure Inspector</div><small>HashTable · buckets de objetos</small><div className="buckets">{buckets.slice(0,32).map((n,i)=><div key={i} title={`Bucket ${i}: ${n}`} style={{height:Math.max(4,n*12)}}/>)}</div><small>{buckets.length} buckets · {files.length} archivos</small></div><div className="panel-head">Estado del repositorio</div><p className="muted">{status.modified.length} modificados · {status.untracked.length} sin seguimiento</p></aside></section><section className="terminal"><div className="terminal-head"><span>TERMINAL</span><small>CLI conectado al servidor</small></div><div className="terminal-body"><div className="terminal-history">{output.slice(0,4).map((x,i)=><div key={i}>{x}</div>)}</div><div className="prompt"><b>minigit ❯</b><input value={terminal} onChange={e=>setTerminal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&void run()} placeholder="status, add src, commit mensaje"/><button onClick={()=>void run()}>↵</button></div></div></section><footer>MiniGit <span>OBJETOS {files.length} · RAMA {status.branch.toUpperCase()}</span><span>● Servidor local</span></footer></main>}
+import {useCallback, useEffect, useMemo, useState} from 'react';
+import {motion} from 'framer-motion';
+
+type Commit = {hash: string; commit: {message: string; date: string; parents: string[]}};
+type Entry = {path: string; hash: string};
+type Status = {branch: string; staged: Entry[]; untracked: string[]; modified: string[]};
+type Change = {path: string; status: 'modified' | 'deleted' | 'untracked'; oldText: string; newText: string; lines: string[]};
+type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'ready' | 'error'; result?: string; error?: string; attempts: number};
+type Health = {ok: boolean; root: string; provider: string};
+
+const api = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4179';
+const wsUrl = api.replace(/^http/, 'ws') + '/api/events';
+
+async function getJSON<T>(route: string): Promise<T> {
+  const response = await fetch(api + route);
+  if (!response.ok) throw new Error((await response.json() as {error?: string}).error ?? response.statusText);
+  return response.json() as Promise<T>;
+}
+
+async function postJSON<T>(route: string, body: unknown): Promise<T> {
+  const response = await fetch(api + route, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const result = await response.json() as T & {error?: string};
+  if (!response.ok) throw new Error(result.error ?? response.statusText);
+  return result;
+}
+
+export default function App() {
+  const [log, setLog] = useState<Commit[]>([]);
+  const [files, setFiles] = useState<Entry[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [changes, setChanges] = useState<Change[]>([]);
+  const [status, setStatus] = useState<Status>({branch: 'main', staged: [], untracked: [], modified: []});
+  const [health, setHealth] = useState<Health | null>(null);
+  const [selected, setSelected] = useState('');
+  const [content, setContent] = useState('');
+  const [terminal, setTerminal] = useState('');
+  const [output, setOutput] = useState<string[]>([]);
+  const [aiTask, setAiTask] = useState<AITask | null>(null);
+  const [dark, setDark] = useState(false);
+  const [buckets, setBuckets] = useState<number[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nextLog, nextFiles, nextStatus, nextBranches, nextChanges, structures, nextHealth] = await Promise.all([
+        getJSON<Commit[]>('/api/repo/log'), getJSON<Entry[]>('/api/repo/tree'), getJSON<Status>('/api/repo/status'),
+        getJSON<string[]>('/api/repo/branches'), getJSON<Change[]>('/api/repo/diff'),
+        getJSON<{objectBuckets: number[]}>('/api/structures'), getJSON<Health>('/api/health'),
+      ]);
+      setLog(nextLog); setFiles(nextFiles); setStatus(nextStatus); setBranches(nextBranches);
+      setChanges(nextChanges); setBuckets(structures.objectBuckets); setHealth(nextHealth); setError('');
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const socket = new WebSocket(wsUrl);
+    socket.onmessage = event => {
+      const message = JSON.parse(event.data as string) as {type?: string; task?: AITask};
+      if (message.type === 'ai-task' && message.task) setAiTask(current => current?.id === message.task?.id ? message.task ?? current : current);
+      if (message.type === 'filesystem') void refresh();
+    };
+    return () => socket.close();
+  }, [refresh]);
+
+  const selectedChange = useMemo(() => changes.find(change => change.path === selected), [changes, selected]);
+  const allPaths = useMemo(() => [...new Set([...files.map(file => file.path), ...changes.map(change => change.path)])].sort(), [files, changes]);
+
+  useEffect(() => {
+    if (!selected || selectedChange) { setContent(''); return; }
+    void getJSON<{content: string}>('/api/repo/file?path=' + encodeURIComponent(selected))
+      .then(result => setContent(result.content)).catch(fetchError => setContent(String(fetchError)));
+  }, [selected, selectedChange]);
+
+  useEffect(() => {
+    if (!aiTask || aiTask.state === 'ready' || aiTask.state === 'error') return;
+    const timer = window.setTimeout(() => {
+      void getJSON<AITask>('/api/ai/tasks/' + aiTask.id).then(setAiTask).catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [aiTask]);
+
+  const run = async () => {
+    const [command, ...args] = terminal.trim().split(/\s+/);
+    if (!command) return;
+    try {
+      let result: unknown;
+      if (command === 'status') result = await getJSON('/api/repo/status');
+      else if (command === 'log') result = await getJSON('/api/repo/log');
+      else if (command === 'add') result = await postJSON('/api/repo/add', {paths: args.length ? args : ['.']});
+      else if (command === 'commit') result = await postJSON('/api/repo/commit', {message: args[0] === '-m' ? args.slice(1).join(' ') : args.join(' ')});
+      else if (command === 'branch') result = await postJSON('/api/repo/branch', {name: args[0]});
+      else if (command === 'checkout') result = await postJSON('/api/repo/checkout', {name: args[0]});
+      else if (command === 'merge') result = await postJSON('/api/repo/merge', {name: args[0]});
+      else if (command === 'stash') result = await postJSON('/api/repo/stash', {action: args[0] ?? 'push'});
+      else throw new Error('Comandos: status, log, add, commit, branch, checkout, merge, stash');
+      setOutput(history => [JSON.stringify(result), ...history]);
+      await refresh();
+    } catch (runError) { setOutput(history => [runError instanceof Error ? runError.message : String(runError), ...history]); }
+    setTerminal('');
+  };
+
+  const requestAI = async (kind: 'review' | 'commit-msg') => {
+    try {
+      const diff = changes.map(change => `diff -- ${change.path}\n${change.lines.join('\n')}`).join('\n');
+      setAiTask(await postJSON<AITask>('/api/ai/' + kind, {text: diff, diff}));
+    } catch (aiError) { setError(aiError instanceof Error ? aiError.message : String(aiError)); }
+  };
+
+  return <main className={dark ? 'app dark' : 'app'}>
+    <header>
+      <div className="brand"><span className="logo">M</span><div><b>MiniGit</b><small>{health?.root ?? 'Conectando al repositorio…'}</small></div></div>
+      <div className="header-right"><span className={error ? 'connection offline' : 'connection'}>● {error ? 'sin conexión' : 'servidor local'}</span><span className="branch">⌘ {status.branch}</span><button onClick={() => setDark(!dark)} aria-label="Cambiar tema">{dark ? '☀' : '◐'}</button></div>
+    </header>
+    {error && <div className="error-banner">No se pudo conectar con MiniGit: {error}. Ejecuta <code>npm run dev:server</code>.</div>}
+    <section className="workspace">
+      <aside className="sidebar">
+        <div className="side-title">EXPLORADOR <span>{allPaths.length}</span></div>
+        {allPaths.map(file => { const change = changes.find(item => item.path === file); return <button className={selected === file ? 'file active' : 'file'} key={file} onClick={() => setSelected(file)}><span className={`dot ${change?.status ?? 'clean'}`}/>{file}</button>; })}
+        {!allPaths.length && <p className="muted">{loading ? 'Cargando…' : 'Añade archivos para comenzar'}</p>}
+        <div className="side-title branch-heading">RAMAS <span>{branches.length}</span></div>
+        {branches.map(branch => <div className={branch === status.branch ? 'file current' : 'file'} key={branch}>◉ {branch}</div>)}
+      </aside>
+      <section className="center">
+        <div className="graph">
+          <div className="panel-head"><span>Grafo de commits</span><small>{log.length} confirmaciones</small></div>
+          <svg viewBox={`0 0 640 ${Math.max(150, log.length * 74)}`} preserveAspectRatio="xMinYMin meet">
+            {log.length > 1 && <line x1="32" y1="36" x2="32" y2={36 + (log.length - 1) * 74} stroke="#6971ff" strokeWidth="3"/>}
+            {log.map((item, index) => <motion.g key={item.hash} initial={{opacity: 0, x: -12}} animate={{opacity: 1, x: 0}} transition={{delay: index * .06}}><circle cx="32" cy={36 + index * 74} r="9" fill="#746bff"/><text x="56" y={32 + index * 74} className="commit-msg">{item.commit.message.slice(0, 56)}</text><text x="56" y={51 + index * 74} className="commit-meta">{item.hash.slice(0, 8)} · {new Date(item.commit.date).toLocaleString('es-CO')}</text></motion.g>)}
+          </svg>
+          {!log.length && <p className="empty">El historial aparecerá después del primer commit.</p>}
+        </div>
+        <div className="editor">
+          <div className="panel-head"><span>{selected || 'Cambios del árbol de trabajo'}</span><small>{selectedChange ? selectedChange.status : 'contenido confirmado'}</small></div>
+          {selectedChange ? <div className="diff-grid"><DiffColumn title="ANTES" text={selectedChange.oldText}/><DiffColumn title="DESPUÉS" text={selectedChange.newText}/></div> : <pre>{selected ? content : 'Selecciona un archivo para inspeccionarlo.'}</pre>}
+        </div>
+      </section>
+      <aside className="right">
+        <div className="panel-head">Asistente IA <span className="online">● {health?.provider ?? 'heuristic'}</span></div>
+        <p className="muted">La revisión usa el diff real del árbol de trabajo.</p>
+        <button className="action" onClick={() => void requestAI('review')} disabled={!changes.length}>Revisar {changes.length} cambio{changes.length === 1 ? '' : 's'}</button>
+        <button className="action secondary" onClick={() => void requestAI('commit-msg')} disabled={!changes.length}>Sugerir mensaje</button>
+        <div className={`task-state ${aiTask?.state ?? ''}`}>{aiTask ? `${aiTask.state} · intento ${aiTask.attempts}` : 'Sin tareas recientes'}</div>
+        <pre className="ai-result">{aiTask?.result ?? aiTask?.error ?? 'La respuesta aparecerá aquí.'}</pre>
+        <div className="inspector"><div className="panel-head">Data Structure Inspector</div><small>HashTable · buckets de objetos</small><div className="buckets">{buckets.slice(0, 32).map((count, index) => <div key={index} title={`Bucket ${index}: ${count}`} style={{height: Math.max(4, count * 12)}}/>)}</div><small>{buckets.length} buckets · {files.length} archivos confirmados</small></div>
+        <div className="panel-head state-heading">Estado</div><div className="stats"><span>{status.staged.length}<small>staged</small></span><span>{status.modified.length}<small>modificados</small></span><span>{status.untracked.length}<small>nuevos</small></span></div>
+      </aside>
+    </section>
+    <section className="terminal"><div className="terminal-head"><span>TERMINAL</span><small>Comandos sobre el servidor local</small></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>minigit ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder="status, add ., commit -m mensaje"/><button onClick={() => void run()}>↵</button></div></div></section>
+    <footer><span>MiniGit</span><span>{changes.length} CAMBIOS · RAMA {status.branch.toUpperCase()}</span><span>● {error ? 'Desconectado' : 'Listo'}</span></footer>
+  </main>;
+}
+
+function DiffColumn({title, text}: {title: string; text: string}) {
+  return <section className="diff-column"><div>{title}</div><pre>{text || '∅'}</pre></section>;
+}
