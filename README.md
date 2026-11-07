@@ -8,9 +8,11 @@ MiniGit es un control de versiones local en TypeScript, organizado como monorepo
 npm install
 npm run build
 npm test
-npm run dev:server # en un repositorio inicializado, puerto 4179
+npm run dev:server # inicializa .minigit en la raíz si hace falta, puerto 4179
 npm run dev:web    # Vite
 ```
+
+Abre `http://localhost:5173`. El servidor local escucha en `127.0.0.1:4179`. Para servir otro repositorio usa `MINIGIT_REPO=/ruta/al/repo npm run dev:server`. La IA funciona en modo heurístico sin configuración. El proveedor externo solo se habilita cuando están definidas `AI_ALLOW_NETWORK=true` y `OPENAI_API_KEY`; así los diffs no salen del equipo por accidente.
 
 CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `merge`, `stash`, `reset`, `revert`, `serve`, `clone`, `push`, `pull`. Para remoto, inicia `minigit serve` dentro del repo del servidor y usa la URL HTTP en clone/push/pull.
 
@@ -45,4 +47,4 @@ La regla del curso prohíbe `Map`, `Set` y librerías de estructuras de datos en
 
 ## Estado de alcance
 
-Esta entrega cubre almacenamiento local, ramas, merge con marcadores de conflicto, stash, reset, revert, sincronización remota por HTTP, API local, eventos de archivos, IA heurística y adaptador de revisión por API, y una interfaz de exploración. La transferencia recorre el DAG alcanzable desde las ramas, usa un Bloom filter junto con los hashes conocidos y envía los objetos que faltan. Los hashes exactos evitan perder objetos por falsos positivos del filtro. El backend de IA aún no implementa reintentos ni un límite configurable de concurrencia; la cola y sus estados solo existen durante la solicitud. El editor no guarda cambios y el panel de diff y el grafo todavía son vistas iniciales. `reset --hard` reescribe el árbol de trabajo y debe usarse con cuidado. Los objetos y el protocolo son educativos y no intercambiables con Git. Benchmarks básicos: `npm run bench`.
+Esta entrega cubre almacenamiento local, ramas, merge con marcadores de conflicto, stash, reset, revert, sincronización remota por HTTP, API local, eventos de archivos, IA heurística y adaptador de revisión por API, y una interfaz de exploración con diff lado a lado. La cola de IA conserva estados en memoria, aplica reintentos y limita la concurrencia mediante `AI_CONCURRENCY`. La transferencia recorre el DAG alcanzable desde las ramas, usa un Bloom filter junto con los hashes conocidos y envía los objetos que faltan. Los hashes exactos evitan perder objetos por falsos positivos del filtro. El editor todavía no guarda cambios y el trazado del grafo usa un solo carril visual. `reset --hard` reescribe el árbol de trabajo y debe usarse con cuidado. Los objetos y el protocolo son educativos y no intercambiables con Git. Benchmarks básicos: `npm run bench`.
