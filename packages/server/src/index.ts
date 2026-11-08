@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import {createServer} from 'node:http';
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
@@ -18,7 +19,7 @@ import {createAccount, createSession, currentUser, destroySession, login, requir
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
 const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
 const port = Number(process.env.PORT ?? 4179);
-const host = process.env.HOST ?? '0.0.0.0';
+const host = process.env.HOST ?? (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 const app = express();
 const server = createServer(app);
 function isAllowedWebOrigin(origin: string): boolean {

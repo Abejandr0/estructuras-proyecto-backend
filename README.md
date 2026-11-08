@@ -12,7 +12,7 @@ npm run dev:server # inicializa .minigit en la raíz si hace falta, puerto 4179
 npm run dev:web    # Vite
 ```
 
-Abre `http://localhost:5173`. El servidor local escucha en `127.0.0.1:4179`. Para servir otro repositorio usa `MINIGIT_REPO=/ruta/al/repo npm run dev:server`. No se finge una respuesta de IA: configura `GEMINI_API_KEY` y `AI_ALLOW_NETWORK=true` en `.env` para habilitar Gemini. La clave solo la lee el backend.
+Abre `http://localhost:5173`. El servidor local escucha en `127.0.0.1:4179`. Para servir otro repositorio usa `MINIGIT_REPO=/ruta/al/repo npm run dev:server`. La clave de Gemini solo la lee el backend.
 
 ## AIVerse y despliegue local
 
@@ -24,15 +24,23 @@ cp .env.example .env
 docker compose up --build
 ```
 
-La web quedará en `http://localhost:5173`, MongoDB y el backend sólo escucharán en loopback. Para usar el backend en producción configura HTTPS y el origen exacto del frontend en `WEB_ORIGIN`. No subas `.env` al repositorio.
+La web quedará en `http://localhost:5173`, MongoDB y el backend sólo escucharán en loopback. Asegúrate de que `MONGO_PASSWORD` use caracteres URL-safe al editar `.env`; no subas ese archivo al repositorio.
 
-### Despliegue en Render y Vercel
+### Despliegue en Render, Vercel y MongoDB Atlas
 
-- **Render:** crea un servicio web desde el `Dockerfile` de la raíz. `render.yaml` deja configurado el servicio y el disco persistente para `/srv/aiverse`; completa `MONGODB_URI`, `WEB_ORIGIN` y, cuando quieras activar la IA, `GEMINI_API_KEY` en el panel. Usa una base MongoDB Atlas con acceso de red limitado a tu servicio cuando sea posible.
-- **Vercel:** importa el repositorio y configura `VITE_API_URL` con la URL HTTPS del backend de Render. Usa el comando de build `npm run build -w @minigit/web` y el directorio de salida `apps/web/dist`. Configura `VITE_API_URL` en Preview y Production según corresponda, y vuelve a desplegar después de cambiarla.
-- En Render, `WEB_ORIGIN` debe ser el dominio exacto de Vercel (puedes separar varios orígenes por coma). La API habilita cookies seguras para comunicación entre dominios en producción.
-- La clave de Gemini se guarda sólo en Render, nunca como variable `VITE_*` en Vercel: las variables Vite se incorporan al bundle público del navegador.
-- Los planes Plus y Pro están presentados en la página de precios; la facturación todavía no está integrada. El backend aplica el límite actual de repositorios por plan (Free 3, Plus 20, Pro ilimitado).
+El repositorio ya incluye `render.yaml` y `vercel.json`. Para producción, despliega primero el backend, después la web y finalmente vuelve al backend para completar el origen permitido.
+
+1. **Crea la base en MongoDB Atlas.** Crea un cluster, luego un usuario de base de datos con permisos de lectura y escritura sobre la base `aiverse`. Este usuario es independiente del usuario con el que inicias sesión en Atlas. En Network Access, permite las IP ranges de salida de tu servicio Render: aparecen en **Connect → Outbound** dentro del servicio. Atlas bloquea conexiones de IPs que no estén en su allowlist; evita `0.0.0.0/0` en producción. Copia la URI `mongodb+srv://...` de Atlas y sustituye el marcador del password por la contraseña del usuario de base de datos.
+2. **Despliega el backend en Render.** Crea un Blueprint desde el repositorio `estructuras-proyecto-backend`, branch `main`, y usa el `render.yaml` de la raíz. Render creará `aiverse-api` desde el Dockerfile. El servicio incluye un disco persistente de 10 GB montado en `/srv/aiverse`; se necesita un plan web pagado para conservar ahí los objetos del código entre despliegues. En Environment completa `MONGODB_URI` con la URI de Atlas y `WEB_ORIGIN` temporalmente con `https://aiverse.vercel.app`. La aplicación selecciona la base `aiverse` por defecto (`MONGODB_DB_NAME` permite cambiarla). Espera a que `/api/health/ready` responda `{"ok":true,"database":"connected"}` y copia el dominio `https://...onrender.com` del servicio.
+3. **Despliega el frontend en Vercel.** Importa `estructuras-proyecto-frontend`, branch `main`. Deja **Root Directory** como `.` para que Vercel use el workspace y `vercel.json` de la raíz. El build usa `npm run build -w @minigit/web` y publica `apps/web/dist`. En Settings → Environment Variables crea `VITE_API_URL` con la URL HTTPS de Render, sin `/api` ni `/` final. Añádela a Production (y Preview si vas a usar previews) y despliega.
+4. **Conecta los dos dominios.** Copia el dominio de Production de Vercel y reemplaza `WEB_ORIGIN` en Render por ese origen exacto, sin barra final. Si separas varios dominios con comas, cada uno debe ser un origen exacto. Guarda y despliega de nuevo el backend. Cuando `/api/health/ready` muestre la base conectada y la web ya use la URL de Render, la cuenta, el feed y las sesiones podrán comunicarse.
+5. **Activa Gemini cuando tengas la clave.** Añade `GEMINI_API_KEY` sólo en Environment de Render y cambia `AI_ALLOW_NETWORK` a `true`. No la pongas como variable `VITE_*` en Vercel: las variables Vite forman parte del JavaScript que recibe el navegador. Después, vuelve a desplegar Render.
+
+Las sesiones usan cookies `Secure` y CORS con credenciales. Si la consola muestra `NetworkError`, revisa que `VITE_API_URL` sea el dominio HTTPS de Render, que el servicio esté activo, que MongoDB acepte las IP ranges de salida de Render y que `WEB_ORIGIN` coincida exactamente con Vercel. Cambiar una variable en cualquiera de las plataformas requiere un nuevo despliegue para que el frontend compilado o el backend la reciban.
+
+**Dónde viven tus datos:** MongoDB guarda usuarios, sesiones, perfiles y metadatos de repositorios/PRs. Los blobs y árboles que forman el contenido versionado se guardan en el disco persistente de Render, no dentro de MongoDB. Por eso el disco y su tamaño son importantes; si quieres almacenamiento más escalable, conviene migrar los objetos a un servicio S3 compatible y dejar MongoDB para los metadatos.
+
+Los planes Plus y Pro se presentan como próximos planes sin pagos activos. El backend aplica el límite actual de repositorios por plan: Free 3, Plus 20 y Pro ilimitado. Los textos legales de beta requieren añadir el nombre legal y el canal de soporte del operador antes de abrir el registro al público.
 
 CLI: `minigit init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `merge`, `stash`, `reset`, `revert`, `serve`, `clone`, `push`, `pull`. Para remoto, inicia `minigit serve` dentro del repo del servidor y usa la URL HTTP en clone/push/pull.
 

@@ -15,7 +15,7 @@ export let activities: Collection<Document> | null = null;
 export async function initializeDatabase(): Promise<void> {
   if (!client) return;
   await client.connect();
-  database = client.db();
+  database = client.db(process.env.MONGODB_DB_NAME ?? 'aiverse');
   const connectedDatabase = database;
   users = connectedDatabase.collection('users');
   sessions = connectedDatabase.collection('sessions');

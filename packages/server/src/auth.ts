@@ -32,20 +32,26 @@ function publicUser(user: Record<string, unknown>) {
   return safeUser;
 }
 
-export async function createAccount(input: {username: unknown; email: unknown; password: unknown; displayName?: unknown}) {
+export async function createAccount(input: {username: unknown; email: unknown; password: unknown; confirmPassword?: unknown; displayName?: unknown}) {
   if (!users) throw new Error('El almacenamiento de cuentas no está disponible; configura MONGODB_URI.');
   const username = typeof input.username === 'string' ? input.username.trim().toLowerCase() : '';
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
   const password = typeof input.password === 'string' ? input.password : '';
   const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : username;
   if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/.test(username)) throw new Error('El nombre de usuario no es válido.');
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('El correo no es válido.');
-  if (password.length < 12 || password.length > 256) throw new Error('La contraseña debe tener entre 12 y 256 caracteres.');
+  const emailPattern = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+  const [localPart] = email.split('@');
+  if (email.length > 254 || !emailPattern.test(email) || localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) throw new Error('Escribe un correo válido, por ejemplo nombre@dominio.com.');
+  if (password.length < 12 || password.length > 128 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9\s]/.test(password)) {
+    throw new Error('La contraseña debe tener 12 a 128 caracteres e incluir mayúscula, minúscula, número y símbolo.');
+  }
+  if (password.toLowerCase().includes('password') || password.toLowerCase().includes('contraseña')) throw new Error('Elige una contraseña menos predecible.');
+  if (input.confirmPassword !== password) throw new Error('Las contraseñas no coinciden.');
   if (!displayName || displayName.length > 80) throw new Error('El nombre visible no es válido.');
   const salt = randomBytes(16);
   const digest = await scrypt(password, salt, 64) as Buffer;
   const user = {id: randomUUID(), username, email, passwordHash: `scrypt$${salt.toString('base64')}$${digest.toString('base64')}`,
-    display_name: displayName, bio: '', language: 'es', plan: 'free', created_at: new Date()};
+    display_name: displayName, bio: '', language: 'es', plan: 'free', repositoryCount: 0, created_at: new Date()};
   try { await users.insertOne(user); }
   catch (error) {
     if ((error as {code?: number}).code === 11000) throw new Error('Ese nombre de usuario o correo ya está registrado.');
