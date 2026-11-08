@@ -1,0 +1,48 @@
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4179
+      MONGODB_URI: ${MONGODB_URI:?Set MONGODB_URI in .env}
+      MINIGIT_REPO: /srv/aiverse
+      AI_PROVIDER: gemini
+      AI_ALLOW_NETWORK: ${AI_ALLOW_NETWORK:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      WEB_ORIGIN: https://${AIVERSE_DOMAIN:?Set AIVERSE_DOMAIN in .env}
+    volumes:
+      - aiverse-repositories:/srv/aiverse
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      AIVERSE_DOMAIN: ${AIVERSE_DOMAIN:?Set AIVERSE_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.aws:/etc/caddy/Caddyfile:ro
+      - aiverse-caddy-data:/data
+      - aiverse-caddy-config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  aiverse-repositories:
+  aiverse-caddy-data:
+  aiverse-caddy-config:

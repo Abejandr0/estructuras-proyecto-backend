@@ -10,7 +10,9 @@ type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'read
 type Health = {ok: boolean; root: string; provider: string};
 
 const api = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:4179' : '')).replace(/\/$/, '');
-const wsUrl = api.replace(/^http/, 'ws') + '/api/events';
+const eventsUrl = new URL('/api/events', api || window.location.origin);
+eventsUrl.protocol = eventsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = eventsUrl.toString();
 
 type Page = 'home'|'feed'|'workspace'|'login'|'register'|'account'|'settings'|'prs'|'pricing'|'terms'|'privacy';
 type Theme = 'system'|'light'|'dark';
