@@ -154,7 +154,6 @@ export default function App() {
       localStorage.removeItem('aiverse-theme');
     } catch {}
   };
-  const toggleTheme = () => updateTheme(dark ? 'light' : 'dark');
 
   const refresh = useCallback(async () => {
     try {
@@ -361,10 +360,10 @@ export default function App() {
   ];
   const passwordValid = passwordChecks.every(check => check.valid) && !/password|contraseña/i.test(passwordValue);
 
-  if (page === 'notFound') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeToggle={toggleTheme} onThemeChange={updateTheme}/><section className="not-found-page"><p className="eyebrow">{t('error.notFoundEyebrow')}</p><span className="not-found-code" aria-hidden="true">404</span><h1>{t('error.notFoundTitle')}</h1><p>{t('error.notFoundBody')}</p><button className="action" onClick={()=>setPage('home')}>{t('common.backHome')}{' '}<span>→</span></button></section><SiteFooter navigate={setPage}/></main>;
+  if (page === 'notFound') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeChange={updateTheme}/><section className="not-found-page"><p className="eyebrow">{t('error.notFoundEyebrow')}</p><span className="not-found-code" aria-hidden="true">404</span><h1>{t('error.notFoundTitle')}</h1><p>{t('error.notFoundBody')}</p><button className="action" onClick={()=>setPage('home')}>{t('common.backHome')}{' '}<span>→</span></button></section><SiteFooter navigate={setPage}/></main>;
 
   if (page === 'feed') return <main className={dark?'app marketing-app dark':'app marketing-app'}>
-    <SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeToggle={toggleTheme} onThemeChange={updateTheme}/>
+    <SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeChange={updateTheme}/>
     <section className="explore-hero"><p className="eyebrow">{t('feed.eyebrow')}</p><h1>{t('feed.titleFirst')}<br/><span>{t('feed.titleSecond')}</span></h1><p>{t('feed.intro')}</p><div className="explore-search"><span>⌕</span><input value={feedSearch} onChange={event=>setFeedSearch(event.target.value)} placeholder={t('feed.searchPlaceholder')} aria-label={t('feed.searchLabel')}/><button onClick={()=>setFeedSearch('')} disabled={!feedSearch}>{t('common.clear')}</button></div><div className="explore-metrics" aria-live="polite"><span><b>{feedLoading?'…':formatNumber(feed.length)}</b> {t('feed.publicRepositories')}</span><span><b>{feedLoading?'…':formatNumber(new Set(feed.map(item=>item.username)).size)}</b> {t('feed.developers')}</span><span>{t('feed.updated')}</span></div></section>
     <section className="explore-content"><div className="community-layout"><div><div className="community-composer"><p className="eyebrow">{t('feed.shareEyebrow')}</p><h2>{t('feed.composerTitle')}</h2>{user?<form onSubmit={event=>void publishPost(event)}><textarea maxLength={1200} value={postText} onChange={event=>setPostText(event.target.value)} placeholder={t('feed.composerPlaceholder')}/><div><small>{formatNumber(postText.length)}/1.200</small><button className="action" disabled={postSubmitting||!postText.trim()}>{postSubmitting?t('feed.publishing'):t('feed.publish')}</button></div>{postError&&<p className="form-error" role="alert">{postError}</p>}</form>:<><p>{t('feed.loginToPost')}</p><button className="action" onClick={()=>setPage('login')}>{t('feed.loginAction')}</button></>}</div><div className="community-posts"><p className="eyebrow">{t('feed.recentEyebrow')}</p>{postsLoading?<div className="feed-skeleton" role="status" aria-label={t('feed.loadingPosts')}><i/><i/><i/></div>:postsError?<div className="feed-error" role="alert"><p>{t('feed.postsError', {error:postsError})}</p><button onClick={()=>void loadPosts()}>{t('common.retry')}</button></div>:communityPosts.length?communityPosts.map(post=><article className="community-post" key={post.id}><div className="post-avatar">{post.display_name?.[0]?.toUpperCase()||'A'}</div><div><strong>{post.display_name||post.username}</strong><small>@{post.username} · {formatDate(post.created_at, {dateStyle:'medium',timeStyle:'short'})}</small><p>{post.text}</p></div></article>):<div className="explore-empty"><h3>{t('feed.startConversation')}</h3><p>{t('feed.firstPostHint')}</p></div>}</div></div><div><div className="explore-heading"><div><p className="eyebrow">{t('feed.directory')}</p><h2>{t('feed.projectsTitle')}</h2><p>{t('feed.repositoriesHint')}</p></div><label className="sort-select">{t('feed.sort')}<select value={feedSort} onChange={event=>setFeedSort(event.target.value as 'popular'|'recent')}><option value="popular">{t('feed.popular')}</option><option value="recent">{t('feed.recent')}</option></select></label></div>
       <div className="explore-tags"><span>{t('feed.trySearch')}</span>{['api','web','ia','typescript','open source'].map(term=><button key={term} onClick={()=>setFeedSearch(term)}>{term}</button>)}</div>
@@ -388,19 +387,19 @@ export default function App() {
       <p className="auth-switch">{page==='login'?t('auth.firstTime'):t('auth.alreadyHaveAccount')} <button className="inline-button" onClick={()=>{setFormError('');setPasswordValue('');setPage(page==='login'?'register':'login')}}>{page==='login'?t('auth.registerTitle'):t('auth.switchLogin')}</button></p><p className="auth-legal">{t('auth.legalIntro')}{' '}<button onClick={()=>setPage('terms')}>{t('footer.terms')}</button> {t('auth.and')}{' '}<button onClick={()=>setPage('privacy')}>{t('footer.privacy')}</button>.</p>
     </section></main>;
 
-  if (page === 'home' || page === 'account' || page === 'settings' || page === 'prs' || page === 'docs' || page === 'pricing' || page === 'terms' || page === 'privacy' || page === 'legal' || page === 'cookies') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeToggle={toggleTheme} onThemeChange={updateTheme}/>
+  if (page === 'home' || page === 'account' || page === 'settings' || page === 'prs' || page === 'docs' || page === 'pricing' || page === 'terms' || page === 'privacy' || page === 'legal' || page === 'cookies') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeChange={updateTheme}/>
     {page==='settings'?<section className="product-page settings-page"><p className="eyebrow">{t('settings.eyebrow')}</p><h1>{t('settings.title')}</h1><p>{t('settings.intro')}</p><div className="settings-card"><label>{t('language.menu')}<select value={lang} onChange={event=>setLanguage(event.target.value as Language)}><option value="es">{t('language.spanish')}</option><option value="en">{t('language.english')}</option></select></label><label>{t('settings.theme')}<select value={theme} onChange={event=>updateTheme(event.target.value as Theme)}><option value="system">{t('settings.followSystem')}</option><option value="light">{t('theme.light')}</option><option value="dark">{t('theme.dark')}</option></select></label><p className="system-theme-note">{t('settings.systemNow')}{' '}<b>{systemDark?t('theme.modeDark'):t('theme.modeLight')}</b>. {theme==='system'?t('settings.systemFollow'):t('settings.manualTheme')}</p></div><button className="secondary action" onClick={()=>setPage('account')}>{t('settings.backAccount')}</button></section>
     :page==='account'?<section className="product-page account-panel"><p className="eyebrow">{t('account.eyebrow')}</p><div className="account-heading"><span className="avatar">{user?.display_name?.[0]?.toUpperCase()??'A'}</span><div><h1>{user?.display_name??t('account.title')}</h1><p>@{user?.username} · {user?.email}</p></div></div><div className="account-plan"><div><b>{t('account.freePlan')}</b><p>{t('account.freeDescription')}</p></div><button className="action" onClick={()=>setPage('pricing')}>{t('account.seePlans')}</button></div><button className="secondary action" onClick={()=>setPage('settings')}>{t('account.editPreferences')}</button></section>
     :page==='docs'?<DocumentationPage navigate={setPage}/>
     :page==='prs'?<section className="product-page"><p className="eyebrow">{t('prs.eyebrow')}</p><h1>{t('prs.title')}</h1><p>{t('prs.intro')}</p><div className="feature-row"><article><b>{t('prs.contextReview')}</b><p>{t('prs.contextReviewBody')}</p></article><article><b>{t('prs.decisions')}</b><p>{t('prs.decisionsBody')}</p></article><article><b>{t('prs.aiHelp')}</b><p>{t('prs.aiHelpBody')}</p></article></div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('prs.start')}</button></section>
     :page==='terms'||page==='privacy'||page==='legal'||page==='cookies'?<><LegalPage kind={page}/><SiteFooter navigate={setPage}/></>
     :page==='pricing'?<PricingPage user={user} billingEnabled={billingEnabled} navigate={setPage} startCheckout={startCheckout}/>
-    :<>{feedError&&<div className="feed-error home-feed-error" role="alert"><p>{t('feed.projectsError', {error:feedError})}</p><button onClick={()=>void loadFeed()}>{t('common.retry')}</button></div>}<Homepage feed={feed} feedLoading={feedLoading} feedError={feedError} user={user} navigate={setPage}/><SiteFooter navigate={setPage}/></>}</main>;
+    :<><Homepage user={user} navigate={setPage}/><SiteFooter navigate={setPage}/></>}</main>;
 
   return <main className={dark ? 'app dark' : 'app'}>
     <header>
       <div className="brand"><span className="logo"><AIVerseMark/></span><div><b>{t('workspace.productName')}</b><small>{t('workspace.tagline')}</small></div></div>
-      <div className="header-right"><span className={error ? 'connection offline' : 'connection'}>● {error ? t('workspace.offline') : t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onToggle={toggleTheme} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
+      <div className="header-right"><span className={error ? 'connection offline' : 'connection'}>● {error ? t('workspace.offline') : t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
     </header>
     {error && <div className="error-banner" role="alert"><span>{health?.sharedRepositoryApiEnabled === false ? error : t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
     {loading && <div className="workspace-loading" role="status" aria-live="polite"><span className="loading-spinner" aria-hidden="true"/><span>{t('workspace.loading')}</span><div className="loading-track"><i/></div></div>}
@@ -468,10 +467,10 @@ export default function App() {
   </main>;
 }
 
-function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:string;name:string;description:string;stars_count:number;username:string}>;feedLoading:boolean;feedError:string;user:{username:string}|null;navigate:(page:RoutePage)=>void}) {
+function Homepage({user,navigate}: {user:{username:string}|null;navigate:(page:RoutePage)=>void}) {
   const {t} = useI18n();
   return <>
-    <section className="home-hero"><div className="home-hero-inner">
+    <section className="home-hero"><div className="site-container home-hero-inner">
       <div className="home-hero-copy">
         <p className="eyebrow">{t('home.heroEyebrow')}</p>
         <h1><span>{t('home.heroTitleFirst')}</span><span className="hero-title-accent">{t('home.heroTitleSecond')}</span></h1>
@@ -480,7 +479,7 @@ function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:s
           <button className="action hero-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button>
           <button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreProjects')} <span aria-hidden="true">→</span></button>
         </div>
-        <div className="home-proof"><span>{t('home.heroTrust')}</span></div>
+      <div className="home-proof"><span>{t('home.heroTrust')}</span></div>
       </div>
       <div className="home-hero-visual">
         <svg className="hero-commit-graph" viewBox="0 0 680 520" aria-hidden="true" focusable="false">
@@ -491,19 +490,16 @@ function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:s
           <circle cx="48" cy="132" r="7"/><circle cx="327" cy="194" r="8"/>
           <circle cx="481" cy="333" r="7"/><circle cx="505" cy="55" r="7"/>
         </svg>
-        <span className="hero-orb hero-orb-one" aria-hidden="true"/>
-        <span className="hero-orb hero-orb-two" aria-hidden="true"/>
-        <span className="hero-orb hero-orb-three" aria-hidden="true"/>
         <div className="home-demo" aria-label={t('home.demoLabel')}>
           <div className="home-demo-top"><div><span className="demo-dot"/><b>{t('home.demoTitle')}</b></div><span className="demo-status">{t('home.pendingDecision')}</span></div>
           <div className="home-demo-branch"><span>⑂</span> feature/session-refresh <small>{t('home.demoTime')}</small></div>
           <div className="home-diff"><div className="demo-file"><span>src/auth/session.ts</span><span>+2 −1</span></div><div className="diff-line removed"><code>−</code><span>return refresh(token);</span></div><div className="diff-line added"><code>+</code><span>if (isExpired(token)) {'{'} return null; {'}'}</span></div><div className="diff-line added"><code>+</code><span>return refresh(token);</span></div></div>
           <div className="home-ai-note"><span className="note-icon">✦</span><div><b>{t('home.aiExplanation')}</b><p>{t('home.aiExplanationBody')}</p></div></div>
-          <div className="home-demo-decision"><span><i/> {t('home.yourDecision')}</span><button onClick={()=>navigate(user?'workspace':'register')}>{t('home.reviewChanges')}</button></div>
+          <div className="home-demo-decision"><span><i/> {t('home.reviewReady')}</span><button onClick={()=>navigate(user?'workspace':'register')}>{t('home.reviewChanges')}</button></div>
         </div>
       </div>
     </div></section>
-    <section className="home-process"><div className="home-section-intro"><p className="eyebrow">{t('home.processEyebrow')}</p><h2>{t('home.processTitleFirst')}<br/>{t('home.processTitleSecond')}</h2><p>{t('home.processIntro')}</p></div>
+    <section className="home-process"><div className="site-container home-process-inner"><div className="home-section-intro"><p className="eyebrow">{t('home.processEyebrow')}</p><h2>{t('home.processTitleFirst')}<br/>{t('home.processTitleSecond')}</h2><p>{t('home.processIntro')}</p></div>
       <div className="home-process-grid">
         <article className="bento-card bento-observe">
           <span className="bento-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false"><path d="M6 4v9a5 5 0 0 0 5 5h7"/><circle cx="6" cy="4" r="2.2"/><circle cx="6" cy="13" r="2.2"/><circle cx="18" cy="18" r="2.2"/></svg></span>
@@ -519,7 +515,7 @@ function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:s
             <div className="bento-ai-preview-head"><span className="bento-ai-symbol" aria-hidden="true">✦</span><strong>{t('home.bentoReviewLabel')}</strong><span className="bento-ai-badge">{t('home.bentoReviewBadge')}</span></div>
             <p>{t('home.bentoReviewSummary')}</p>
             <div className="bento-ai-detail"><span aria-hidden="true">✓</span>{t('home.bentoReviewDetail')}</div>
-            <div className="bento-ai-signals" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div>
+            <div className="bento-ai-chips"><span>{t('home.bentoRisk')}</span><span>{t('home.bentoSuggestion')}</span></div>
           </div>
         </article>
         <article className="bento-card bento-collaborate">
@@ -528,14 +524,16 @@ function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:s
           <svg className="bento-flow-art bento-merge-art" viewBox="0 0 320 70" fill="none" aria-hidden="true" focusable="false"><path d="M8 12h63c37 0 29 23 68 23h72c27 0 26 23 61 23h40M8 58h63c37 0 29-23 68-23"/><circle cx="8" cy="12" r="5"/><circle cx="8" cy="58" r="5"/><circle cx="139" cy="35" r="5"/><circle cx="211" cy="35" r="5"/><circle cx="272" cy="58" r="5"/></svg>
         </article>
       </div>
-    </section>
-    {feedLoading||feed.length>=3?<section className="home-community"><div className="home-community-copy"><p className="eyebrow">{t('home.communityEyebrow')}</p><h2>{t('home.communityTitleFirst')}<br/>{t('home.communityTitleSecond')}</h2><p>{t('home.communityIntro')}</p><button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreCommunity')}{' '}<span>→</span></button></div><div className="home-project-rail" aria-busy={feedLoading} id="home-project-rail">{feedLoading?<div className="home-feed-skeleton" role="status" aria-label={t('home.loadingProjects')}><i/><i/><i/></div>:feed.slice(0,5).map((item,index)=><article className="home-project-card" key={item.id}><div className="project-card-top"><span>0{index+1}</span><small>{t('home.projectBadge')}</small></div><b>{item.username}/{item.name}</b><p>{item.description||t('home.projectFallback')}</p><div className="project-card-foot"><span>☆ {item.stars_count}</span><button onClick={()=>navigate('feed')}>{t('home.viewProject')}</button></div></article>)}</div>{feed.length>2&&<div className="rail-controls"><span>{t('feed.exploreMore')}</span><button aria-label={t('feed.searchPrevious')} onClick={()=>document.getElementById('home-project-rail')?.scrollBy({left:-280,behavior:'smooth'})}>←</button><button aria-label={t('feed.searchMore')} onClick={()=>document.getElementById('home-project-rail')?.scrollBy({left:280,behavior:'smooth'})}>→</button></div>}</section>:feedError?null:<section className="home-community-empty"><div><p className="eyebrow">{t('feed.eyebrow')}</p><h2>{t('home.emptyTitleFirst')}<br/>{t('home.emptyTitleSecond')}</h2><p>{t('home.emptyBody')}</p></div><button className="action" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}{' '}<span>→</span></button></section>}
-    <section className="home-learning"><div><p className="eyebrow">{t('home.learningEyebrow')}</p><h2>{t('home.learningTitle')}</h2><p>{t('home.learningBody')}</p></div><button onClick={()=>navigate('docs')}>{t('home.openDocs')}{' '}<span>→</span></button></section>
-    <section className="home-plans">
+    </div></section>
+    <section className="home-community-learning"><div className="site-container home-community-grid">
+      <article className="home-resource-card home-community-card"><p className="eyebrow">{t('home.communityEyebrow')}</p><h2>{t('home.communityCardTitle')}</h2><p>{t('home.communityCardBody')}</p><button className="action home-resource-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button></article>
+      <article className="home-resource-card home-documentation-card"><p className="eyebrow">{t('home.learningEyebrow')}</p><h2>{t('home.docsCardTitle')}</h2><p>{t('home.docsCardBody')}</p><button className="home-resource-secondary" onClick={()=>navigate('docs')}>{t('home.openDocs')} <span aria-hidden="true">→</span></button></article>
+    </div></section>
+    <section className="home-plans"><div className="site-container home-plans-inner">
       <div className="home-plans-copy"><p className="eyebrow">{t('home.plansEyebrow')}</p><h2>{t('home.plansTitleFirst')}<br/><span>{t('home.plansTitleSecond')}</span></h2><button className="action home-plans-cta" onClick={()=>navigate('pricing')}>{t('home.comparePlans')} <span aria-hidden="true">→</span></button></div>
       <div className="home-growth-visual" aria-hidden="true"><svg viewBox="0 0 560 330" fill="none" focusable="false"><rect className="growth-panel growth-panel-one" x="30" y="120" width="118" height="148" rx="18"/><rect className="growth-panel growth-panel-two" x="174" y="72" width="118" height="148" rx="18"/><rect className="growth-panel growth-panel-three" x="318" y="24" width="118" height="148" rx="18"/><rect className="growth-line growth-accent" x="51" y="151" width="45" height="7" rx="3.5"/><rect className="growth-line" x="51" y="170" width="72" height="5" rx="2.5"/><rect className="growth-line growth-accent" x="195" y="103" width="45" height="7" rx="3.5"/><rect className="growth-line" x="195" y="122" width="72" height="5" rx="2.5"/><rect className="growth-line growth-accent" x="339" y="55" width="45" height="7" rx="3.5"/><rect className="growth-line" x="339" y="74" width="72" height="5" rx="2.5"/><path className="growth-path" d="M55 259c66 0 63-46 132-46s67-50 135-50 64-49 128-49"/><circle className="growth-node" cx="55" cy="259" r="7"/><circle className="growth-node" cx="187" cy="213" r="7"/><circle className="growth-node" cx="322" cy="163" r="7"/><circle className="growth-node" cx="450" cy="114" r="7"/></svg></div>
-    </section>
-    <section className="home-final-cta"><div className="home-final-cta-inner"><div className="home-final-copy"><h2>{t('home.finalTitleFirst')}<br/><span>{t('home.finalTitleSecond')}</span></h2><button className="action home-final-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button><small>{t('home.trustLine')}</small></div><div className="home-final-visual" aria-hidden="true"><svg viewBox="0 0 520 360" fill="none" focusable="false"><path className="final-branch-line" d="M29 88h94c43 0 45 44 92 44h53m-154 0v91c0 34 37 44 70 44h54m30-135h78c45 0 47-45 92-45h66m-236 180h105c39 0 43-41 82-41h49"/><circle className="final-node" cx="29" cy="88" r="7"/><circle className="final-node" cx="122" cy="88" r="7"/><circle className="final-node" cx="122" cy="132" r="7"/><circle className="final-node" cx="184" cy="267" r="7"/><circle className="final-node" cx="267" cy="132" r="8"/><circle className="final-node" cx="362" cy="132" r="7"/><circle className="final-node" cx="456" cy="87" r="7"/><circle className="final-node" cx="393" cy="232" r="7"/><circle className="final-node" cx="493" cy="232" r="7"/></svg><span className="final-orb final-orb-one"/><span className="final-orb final-orb-two"/><span className="final-orb final-orb-three"/></div></div></section>
+    </div></section>
+    <section className="home-final-cta"><div className="site-container home-final-cta-inner"><div className="home-final-copy"><h2>{t('home.finalTitleFirst')}<br/><span>{t('home.finalTitleSecond')}</span></h2><button className="action home-final-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button><small>{t('home.trustLine')}</small></div><div className="home-final-visual" aria-hidden="true"><svg viewBox="0 0 520 360" fill="none" focusable="false"><path className="final-branch-line" d="M29 88H122c46 0 46 44 92 44h53c48 0 47-44 95-44h94c30 0 30 28 30 58v50c0 24-22 36-46 36h-47c-43 0-43 35-86 35H184c-40 0-62-20-62-60v-75"/><circle className="final-node" cx="29" cy="88" r="7"/><circle className="final-node" cx="122" cy="88" r="7"/><circle className="final-node" cx="214" cy="132" r="7"/><circle className="final-node" cx="267" cy="132" r="8"/><circle className="final-node" cx="362" cy="88" r="7"/><circle className="final-node" cx="456" cy="88" r="7"/><circle className="final-node" cx="486" cy="196" r="7"/><circle className="final-node" cx="440" cy="232" r="7"/><circle className="final-node" cx="393" cy="232" r="7"/><circle className="final-node" cx="307" cy="267" r="7"/><circle className="final-node" cx="184" cy="267" r="7"/><circle className="final-node" cx="122" cy="207" r="7"/><circle className="final-node" cx="122" cy="132" r="7"/></svg><span className="final-orb final-orb-one"/><span className="final-orb final-orb-two"/><span className="final-orb final-orb-three"/></div></div></section>
   </>;
 }
 
@@ -569,48 +567,82 @@ function AIVerseMark() {
   return <svg className="aiverse-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M7 32 20 19 33 32M20 19V7"/><circle cx="7" cy="32" r="2.5"/><circle cx="33" cy="32" r="2.5"/><circle className="mark-core" cx="20" cy="19" r="3"/><circle cx="20" cy="7" r="2.5"/></svg>;
 }
 
-function ThemeControl({theme,dark,onToggle,onSelect,compact=false}: {theme:Theme;dark:boolean;onToggle:()=>void;onSelect:(theme:Theme)=>void;compact?:boolean}) {
+function ThemeControl({theme,dark,onSelect,compact=false}: {theme:Theme;dark:boolean;onSelect:(theme:Theme)=>void;compact?:boolean}) {
   const {t} = useI18n();
   const [open,setOpen] = useState(false);
-  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const mode = dark ? t('theme.modeDark') : t('theme.modeLight');
   const currentLabel = theme === 'system' ? t('theme.systemCurrent', {mode}) : t(`theme.${theme}`);
   const options: Array<{value:Theme;label:string}> = [{value:'system',label:t('theme.system')},{value:'light',label:t('theme.light')},{value:'dark',label:t('theme.dark')}];
-  return <div className={`theme-control${compact?' is-compact':''}`} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setOpen(false)}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();setOpen(false);menuTrigger.current?.focus()}}}>
-    <button type="button" className="theme-toggle" onClick={onToggle} aria-label={t('theme.switchTo', {mode: dark ? t('theme.modeLight') : t('theme.modeDark'), current: currentLabel})} aria-pressed={dark} title={t('theme.current', {current: currentLabel})}>
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{dark?<><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>:<path d="M20.1 15.1A8.5 8.5 0 0 1 8.9 3.9 8.5 8.5 0 1 0 20.1 15.1Z"/>}</svg>
-      <span className="theme-current" aria-live="polite">{currentLabel}</span>
+  useEffect(()=>{
+    if (!open) return;
+    const closeOutside = (event:PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', closeOutside);
+    menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  },[open]);
+  const handleMenuKeyDown = (event:React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') { event.preventDefault(); setOpen(false); trigger.current?.focus(); return; }
+    if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    event.preventDefault(); items[next]?.focus();
+  };
+  return <div ref={root} className={`theme-control${compact?' is-compact':''}`}>
+    <button type="button" ref={trigger} className="theme-toggle" onClick={()=>setOpen(value=>!value)} aria-label={t('theme.current', {current:currentLabel})} aria-haspopup="menu" aria-expanded={open} aria-controls="theme-options" title={t('theme.current', {current:currentLabel})}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        {theme==='system'?<><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></>:theme==='light'?<><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>:<path d="M20.1 15.1A8.5 8.5 0 0 1 8.9 3.9 8.5 8.5 0 1 0 20.1 15.1Z"/>}
+      </svg><span className="sr-only" aria-live="polite">{currentLabel}</span>
     </button>
-    <button type="button" ref={menuTrigger} className="theme-menu-trigger" aria-label={t('theme.choose')} aria-expanded={open} aria-controls="theme-options" onClick={()=>setOpen(value=>!value)}>⌄</button>
-    {open&&<div className="theme-menu" id="theme-options" role="group" aria-label={t('theme.menu')}>{options.map(option=><button type="button" key={option.value} aria-pressed={theme===option.value} onClick={()=>{onSelect(option.value);setOpen(false)}}><span>{option.label}{option.value==='system'&&theme==='system'?` · ${mode}`:''}</span>{theme===option.value&&<span aria-hidden="true">✓</span>}</button>)}</div>}
+    {open&&<div ref={menu} className="theme-menu control-popover" id="theme-options" role="menu" aria-label={t('theme.menu')} onKeyDown={handleMenuKeyDown}>{options.map(option=><button type="button" role="menuitemradio" key={option.value} aria-checked={theme===option.value} onClick={()=>{onSelect(option.value);setOpen(false);trigger.current?.focus()}}><span>{option.label}{option.value==='system'&&theme==='system'?` · ${mode}`:''}</span>{theme===option.value&&<span className="menu-check" aria-hidden="true">✓</span>}</button>)}</div>}
   </div>;
 }
 
 function LanguageControl({compact=false}: {compact?:boolean}) {
   const {lang,setLanguage,t} = useI18n();
   const [open,setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const options: Array<{value:Language;label:string}> = [{value:'es',label:t('language.spanish')},{value:'en',label:t('language.english')}];
-  return <div className={`language-control${compact?' is-compact':''}`} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setOpen(false)}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();setOpen(false);trigger.current?.focus()}}}>
-    <button type="button" ref={trigger} className="language-toggle" aria-label={t('language.choose')} aria-expanded={open} aria-controls="language-options" onClick={()=>setOpen(value=>!value)}>
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-      <span>{lang.toUpperCase()}</span><span className="language-caret" aria-hidden="true">⌄</span>
+  useEffect(()=>{
+    if (!open) return;
+    const closeOutside = (event:PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', closeOutside);
+    menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  },[open]);
+  const handleMenuKeyDown = (event:React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') { event.preventDefault(); setOpen(false); trigger.current?.focus(); return; }
+    if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    event.preventDefault(); items[next]?.focus();
+  };
+  return <div ref={root} className={`language-control${compact?' is-compact':''}`}>
+    <button type="button" ref={trigger} className="language-toggle" aria-label={t('language.current', {language:t(lang==='es'?'language.spanish':'language.english')})} aria-haspopup="menu" aria-expanded={open} aria-controls="language-options" onClick={()=>setOpen(value=>!value)}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+      <span>{lang.toUpperCase()}</span>
     </button>
-    {open&&<div className="language-menu" id="language-options" role="group" aria-label={t('language.menu')}>{options.map(option=><button type="button" key={option.value} aria-pressed={lang===option.value} onClick={()=>{setLanguage(option.value);setOpen(false)}}><span>{option.label}</span><span>{option.value.toUpperCase()}{lang===option.value&&<span aria-hidden="true"> · ✓</span>}</span></button>)}</div>}
+    {open&&<div ref={menu} className="language-menu control-popover" id="language-options" role="menu" aria-label={t('language.menu')} onKeyDown={handleMenuKeyDown}>{options.map(option=><button type="button" role="menuitemradio" key={option.value} aria-checked={lang===option.value} onClick={()=>{setLanguage(option.value);setOpen(false);trigger.current?.focus()}}><span>{option.label}</span>{lang===option.value&&<span className="menu-check" aria-hidden="true">✓</span>}</button>)}</div>}
   </div>;
 }
 
-function SiteHeader({page,user,navigate,theme,dark,onThemeToggle,onThemeChange}: {page:Page;user:{username:string}|null;navigate:(page:RoutePage)=>void;theme:Theme;dark:boolean;onThemeToggle:()=>void;onThemeChange:(theme:Theme)=>void}) {
+function SiteHeader({page,user,navigate,theme,dark,onThemeChange}: {page:Page;user:{username:string}|null;navigate:(page:RoutePage)=>void;theme:Theme;dark:boolean;onThemeChange:(theme:Theme)=>void}) {
   const {t} = useI18n();
   const [menuOpen,setMenuOpen] = useState(false);
   useEffect(()=>setMenuOpen(false),[page]);
   const closeMenu = () => setMenuOpen(false);
-  return <header className={`site-header${menuOpen?' is-menu-open':''}`}><button className="wordmark" onClick={()=>{closeMenu();navigate('home')}}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><button type="button" className="mobile-menu-toggle" aria-label={menuOpen?t('nav.closeMenu'):t('nav.openMenu')} aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={()=>setMenuOpen(value=>!value)}><span aria-hidden="true">{menuOpen?'×':'☰'}</span></button><nav id="primary-navigation" aria-label={t('nav.label')}><button className={page==='home'?'active':''} onClick={()=>{closeMenu();navigate('home')}}>{t('nav.home')}</button><button className={page==='feed'?'active':''} onClick={()=>{closeMenu();navigate('feed')}}>{t('nav.community')}</button><button className={page==='docs'?'active':''} onClick={()=>{closeMenu();navigate('docs')}}>{t('nav.guides')}</button><button className={page==='pricing'?'active':''} onClick={()=>{closeMenu();navigate('pricing')}}>{t('nav.plans')}</button><button className="mobile-nav-action" onClick={()=>{closeMenu();navigate(user?'account':'login')}}>{user?t('nav.myAccount'):t('nav.login')}</button><button className="mobile-nav-action mobile-nav-primary" onClick={()=>{closeMenu();navigate(user?'workspace':'register')}}>{user?t('nav.openWorkspace'):t('nav.register')} →</button></nav><div className="site-header-actions"><LanguageControl compact/><ThemeControl theme={theme} dark={dark} onToggle={onThemeToggle} onSelect={onThemeChange} compact/>{user?<button className="account-link" onClick={()=>navigate('account')}>@{user.username}</button>:<button className="site-login" onClick={()=>navigate('login')}>{t('nav.login')}</button>}<button className="action site-cta" onClick={()=>navigate(user?'workspace':'register')}>{user?t('nav.openWorkspace'):t('nav.register')} <span>→</span></button></div></header>;
+  return <header className={`site-header${menuOpen?' is-menu-open':''}`}><div className="site-container site-header-inner"><button className="wordmark" onClick={()=>{closeMenu();navigate('home')}}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><button type="button" className="mobile-menu-toggle" aria-label={menuOpen?t('nav.closeMenu'):t('nav.openMenu')} aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={()=>setMenuOpen(value=>!value)}><span aria-hidden="true">{menuOpen?'×':'☰'}</span></button><nav id="primary-navigation" aria-label={t('nav.label')}><button className={page==='home'?'active':''} onClick={()=>{closeMenu();navigate('home')}}>{t('nav.home')}</button><button className={page==='feed'?'active':''} onClick={()=>{closeMenu();navigate('feed')}}>{t('nav.community')}</button><button className={page==='docs'?'active':''} onClick={()=>{closeMenu();navigate('docs')}}>{t('nav.guides')}</button><button className={page==='pricing'?'active':''} onClick={()=>{closeMenu();navigate('pricing')}}>{t('nav.plans')}</button><button className="mobile-nav-action" onClick={()=>{closeMenu();navigate(user?'account':'login')}}>{user?t('nav.myAccount'):t('nav.login')}</button><button className="mobile-nav-action mobile-nav-primary" onClick={()=>{closeMenu();navigate(user?'workspace':'register')}}>{user?t('nav.openWorkspace'):t('nav.register')} →</button></nav><div className="site-header-actions"><div className="header-preferences"><LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={onThemeChange} compact/><span className="header-preferences-divider" aria-hidden="true"/></div>{user?<button className="account-link" onClick={()=>navigate('account')}>@{user.username}</button>:<button className="site-login" onClick={()=>navigate('login')}>{t('nav.login')}</button>}<button className="action site-cta" onClick={()=>navigate(user?'workspace':'register')}>{user?t('nav.openWorkspace'):t('nav.register')} <span aria-hidden="true">→</span></button></div></div></header>;
 }
 
 function SiteFooter({navigate}: {navigate: (page: RoutePage)=>void}) {
   const {t} = useI18n();
-  return <footer className="site-footer"><div className="footer-main"><div className="footer-brand"><button className="wordmark" onClick={()=>navigate('home')}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><p>{t('footer.tagline')}</p></div><div className="footer-links"><div><b>{t('nav.community')}</b><button onClick={()=>navigate('feed')}>{t('footer.feed')}</button><button onClick={()=>navigate('docs')}>{t('footer.documentation')}</button></div><div><b>{t('footer.account')}</b><button onClick={()=>navigate('login')}>{t('nav.login')}</button><button onClick={()=>navigate('register')}>{t('nav.register')}</button><button onClick={()=>navigate('pricing')}>{t('nav.plans')}</button></div><div><b>{t('footer.information')}</b><button onClick={()=>navigate('legal')}>{t('footer.legal')}</button><button onClick={()=>navigate('terms')}>{t('footer.terms')}</button><button onClick={()=>navigate('privacy')}>{t('footer.privacy')}</button><button onClick={()=>navigate('cookies')}>{t('footer.cookies')}</button></div></div></div><div className="footer-bottom"><span>{t('footer.copyright')}</span><span>{t('footer.closing')}</span></div></footer>;
+  return <footer className="site-footer"><div className="site-container footer-container"><div className="footer-main"><div className="footer-brand"><button className="wordmark" onClick={()=>navigate('home')}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><p>{t('footer.tagline')}</p></div><div className="footer-links"><div><b>{t('nav.community')}</b><button onClick={()=>navigate('feed')}>{t('footer.feed')}</button><button onClick={()=>navigate('docs')}>{t('footer.documentation')}</button></div><div><b>{t('footer.account')}</b><button onClick={()=>navigate('login')}>{t('nav.login')}</button><button onClick={()=>navigate('register')}>{t('nav.register')}</button><button onClick={()=>navigate('pricing')}>{t('nav.plans')}</button></div><div><b>{t('footer.information')}</b><button onClick={()=>navigate('legal')}>{t('footer.legal')}</button><button onClick={()=>navigate('terms')}>{t('footer.terms')}</button><button onClick={()=>navigate('privacy')}>{t('footer.privacy')}</button><button onClick={()=>navigate('cookies')}>{t('footer.cookies')}</button></div></div></div><div className="footer-bottom"><span>{t('footer.copyright')}</span><span>{t('footer.closing')}</span></div></div></footer>;
 }
 
 function DocumentationPage({navigate}: {navigate: (page: RoutePage)=>void}) {

@@ -30,6 +30,7 @@
   "meta.notFound.title": "Página no encontrada | AIVerse",
   "meta.notFound.description": "La página que buscas no está disponible.",
   "language.choose": "Elegir idioma",
+  "language.current": "Idioma actual: {{language}}",
   "language.menu": "Idioma de la interfaz",
   "language.spanish": "Español",
   "language.english": "English",
@@ -285,6 +286,7 @@
   "home.aiExplanation": "Explicación de AIVerse",
   "home.aiExplanationBody": "Evita renovar una sesión que ya expiró.",
   "home.yourDecision": "Tú decides.",
+  "home.reviewReady": "Listo para revisar",
   "home.reviewChanges": "Revisar cambios →",
   "home.processEyebrow": "ASÍ TRABAJAS EN AIVERSE",
   "home.processTitleFirst": "Del cambio",
@@ -305,6 +307,8 @@
   "home.bentoReviewBadge": "CON CONTEXTO",
   "home.bentoReviewSummary": "Este cambio evita renovar una sesión vencida.",
   "home.bentoReviewDetail": "El equipo decide qué integrar.",
+  "home.bentoRisk": "Riesgo bajo",
+  "home.bentoSuggestion": "1 sugerencia",
   "home.transparentCollaboration": "Colaboración transparente",
   "home.communityEyebrow": "PROYECTOS DE LA COMUNIDAD",
   "home.communityTitleFirst": "Ideas reales.",
@@ -326,6 +330,10 @@
   "home.learningTitle": "Una guía clara para cada paso.",
   "home.learningBody": "Desde tu primer commit hasta una revisión colaborativa: consulta ejemplos, comandos y respuestas cuando los necesites.",
   "home.openDocs": "Ir a la documentación",
+  "home.communityCardTitle": "Comunidad para crear",
+  "home.communityCardBody": "Publica tus ideas y descubre proyectos.",
+  "home.docsCardTitle": "Guías para avanzar",
+  "home.docsCardBody": "Comandos y revisiones, paso a paso.",
   "home.plansEyebrow": "PLANES PARA TU PROYECTO",
   "home.plansTitleFirst": "Empieza gratis.",
   "home.plansTitleSecond": "Crece a tu ritmo.",
@@ -523,5 +531,5 @@
   "nav.openMenu": "Abrir menú de navegación",
   "nav.closeMenu": "Cerrar menú de navegación",
   "error.workspaceConnection": "No se pudo conectar con AIVerse: {{error}}",
-  "home.heroTrust": "Gratis para empezar · Sin tarjeta · Tú decides."
+  "home.heroTrust": "Gratis para empezar · Sin tarjeta"
 }

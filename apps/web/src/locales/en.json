@@ -30,6 +30,7 @@
   "meta.notFound.title": "Page not found | AIVerse",
   "meta.notFound.description": "The page you are looking for is unavailable.",
   "language.choose": "Choose language",
+  "language.current": "Current language: {{language}}",
   "language.menu": "Interface language",
   "language.spanish": "Español",
   "language.english": "English",
@@ -285,6 +286,7 @@
   "home.aiExplanation": "AIVerse explanation",
   "home.aiExplanationBody": "Avoids refreshing an already expired session.",
   "home.yourDecision": "You decide.",
+  "home.reviewReady": "Ready to review",
   "home.reviewChanges": "Review changes →",
   "home.processEyebrow": "HOW YOU WORK IN AIVERSE",
   "home.processTitleFirst": "From change",
@@ -305,6 +307,8 @@
   "home.bentoReviewBadge": "WITH CONTEXT",
   "home.bentoReviewSummary": "This change avoids refreshing an expired session.",
   "home.bentoReviewDetail": "Your team decides what to merge.",
+  "home.bentoRisk": "Low risk",
+  "home.bentoSuggestion": "1 suggestion",
   "home.transparentCollaboration": "Transparent collaboration",
   "home.communityEyebrow": "PROJECTS FROM THE COMMUNITY",
   "home.communityTitleFirst": "Real ideas.",
@@ -326,6 +330,10 @@
   "home.learningTitle": "A clear guide for every step.",
   "home.learningBody": "From your first commit to a team review, find examples, commands, and answers when you need them.",
   "home.openDocs": "Open the documentation",
+  "home.communityCardTitle": "A community to build",
+  "home.communityCardBody": "Share ideas and discover projects.",
+  "home.docsCardTitle": "Guides to move forward",
+  "home.docsCardBody": "Commands and reviews, step by step.",
   "home.plansEyebrow": "PLANS FOR YOUR PROJECT",
   "home.plansTitleFirst": "Start free.",
   "home.plansTitleSecond": "Grow your way.",
@@ -523,5 +531,5 @@
   "nav.openMenu": "Open navigation menu",
   "nav.closeMenu": "Close navigation menu",
   "error.workspaceConnection": "Could not connect to AIVerse: {{error}}",
-  "home.heroTrust": "Free to start · No card · You decide."
+  "home.heroTrust": "Free to start · No card"
 }
