@@ -75,9 +75,30 @@
 .site-header-actions .theme-control button{min-height:38px}
 .site-header-actions .theme-menu{right:0}
 .header-right .theme-control{margin-left:2px}
+.app .header-right .theme-control button,.app .header-right .language-control button{min-height:38px;border:1px solid var(--border-control);background:var(--surface-glass);color:var(--text-muted);font:600 12px Manrope,sans-serif}
+.language-control{position:relative;display:inline-flex;flex:none;color:var(--text)}
+.language-control button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:0 9px;border:1px solid var(--border-control);border-radius:9px;background:var(--surface-glass);color:var(--text-muted);font:600 12px Manrope,sans-serif;cursor:pointer;transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease,transform 100ms ease}
+.language-control button:hover{background:var(--accent-soft);color:var(--brand)}
+.language-control button:active{transform:scale(.96)}
+.language-control button:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.language-control .language-toggle svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.language-control .language-toggle>span:first-of-type{font-size:11px;letter-spacing:.04em}
+.language-control .language-caret{font-size:13px}
+.language-control.is-compact .language-toggle{width:38px;padding:0}
+.language-control.is-compact .language-caret{display:none}
+.language-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:30;display:grid;gap:3px;min-width:160px;padding:6px;border:1px solid var(--border-control);border-radius:11px;background:var(--surface-raised);box-shadow:var(--shadow)}
+.language-menu,.theme-menu{z-index:40}
+.language-menu button{display:flex;justify-content:space-between;width:100%;min-height:38px;padding:0 10px;border-color:transparent;background:transparent;color:var(--text);text-align:left;font-size:13px}
+.language-menu button:hover,.language-menu button[aria-pressed="true"]{border-color:var(--border);background:var(--accent-soft);color:var(--brand)}
+.language-menu button:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+.site-header .mobile-menu-toggle,.site-header .mobile-nav-action{display:none}
+.site-header .mobile-menu-toggle{border:1px solid var(--border-control);border-radius:9px;background:var(--surface);color:var(--text);font-size:19px;line-height:1;cursor:pointer}
+.site-header .mobile-menu-toggle:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.site-header .mobile-nav-primary{background:var(--brand);color:var(--brand-contrast)}
+.site-header .mobile-nav-primary:hover{background:var(--brand);color:var(--brand-contrast)}
 .task-state.processing,.demo-status{color:var(--warning-text)}
 .dot.modified,.demo-dot,.window-bar i:nth-child(2){background:var(--warning)}
 .window-bar i:nth-child(3){background:var(--success)}
 .footer-brand p,.site-footer .footer-bottom{color:var(--text-on-night)}
 .home-final-cta small{color:var(--text-on-night)}
-@media(max-width:650px){.site-header-actions .theme-current{display:none}.site-header-actions .theme-toggle{width:38px;padding:0}.site-header-actions{gap:6px}}
+@media(max-width:650px){.site-header-actions .theme-current{display:none}.site-header-actions .theme-toggle{width:38px;padding:0}.site-header-actions{gap:6px}.marketing-app>header.site-header{display:flex;flex-wrap:nowrap;justify-content:space-between;gap:8px;min-height:64px;padding:10px 14px}.site-header .mobile-menu-toggle{display:grid;place-items:center;flex:none;width:38px;height:38px;padding:0}.site-header nav{display:none}.site-header.is-menu-open nav{position:absolute;top:calc(100% + 1px);left:10px;right:10px;z-index:35;display:grid;width:auto;gap:4px;margin:0;padding:9px;border:1px solid var(--border-control);border-radius:12px;background:var(--surface-raised);box-shadow:var(--shadow);text-align:left}.site-header.is-menu-open nav button{width:100%;min-height:40px;padding:9px 11px;text-align:left}.site-header .mobile-nav-action{display:block;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}.site-header .mobile-nav-primary{border-color:var(--brand)}.site-header-actions{flex:none}.site-header-actions .site-login,.site-header-actions .account-link,.site-header-actions .site-cta{display:none}.site-header-actions .language-control.is-compact .language-toggle{width:38px}.site-header-actions .theme-menu,.site-header-actions .language-menu{right:0}}
