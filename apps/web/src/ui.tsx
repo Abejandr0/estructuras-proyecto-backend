@@ -472,8 +472,36 @@ function Homepage({feed,feedLoading,feedError,user,navigate}: {feed: Array<{id:s
   const {t,formatPrice,formatNumber} = useI18n();
   return <>
     <section className="home-hero"><div className="home-hero-inner">
-      <div className="home-hero-copy"><p className="eyebrow">{t('home.heroEyebrow')}</p><h1>{t('home.heroTitleFirst')}<br/><span>{t('home.heroTitleSecond')}</span></h1><p className="home-hero-lead">{t('home.heroLead')}</p><div className="home-hero-actions"><button className="action hero-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}{' '}<span>→</span></button><button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreProjects')}{' '}<span>→</span></button></div><div className="home-proof"><span>{t('home.freeToStart')}</span><i/><span>{t('home.noCard')}</span><i/><span>{t('home.aiUnderControl')}</span></div></div>
-      <div className="home-demo" aria-label={t('home.demoLabel')}><div className="home-demo-top"><div><span className="demo-dot"/><b>{t('home.demoTitle')}</b></div><span className="demo-status">{t('home.pendingDecision')}</span></div><div className="home-demo-branch"><span>⑂</span> feature/session-refresh <small>{t('home.demoTime')}</small></div><div className="home-diff"><div className="demo-file"><span>src/auth/session.ts</span><span>+2 −1</span></div><div className="diff-line removed"><code>−</code><span>return refresh(token);</span></div><div className="diff-line added"><code>+</code><span>if (isExpired(token)) {'{'} return null; {'}'}</span></div><div className="diff-line added"><code>+</code><span>return refresh(token);</span></div></div><div className="home-ai-note"><span className="note-icon">✦</span><div><b>{t('home.aiExplanation')}</b><p>{t('home.aiExplanationBody')}</p></div></div><div className="home-demo-decision"><span><i/> {t('home.yourDecision')}</span><button onClick={()=>navigate(user?'workspace':'register')}>{t('home.reviewChanges')}</button></div></div>
+      <div className="home-hero-copy">
+        <p className="eyebrow">{t('home.heroEyebrow')}</p>
+        <h1><span>{t('home.heroTitleFirst')}</span><span className="hero-title-accent">{t('home.heroTitleSecond')}</span></h1>
+        <p className="home-hero-lead">{t('home.heroLead')}</p>
+        <div className="home-hero-actions">
+          <button className="action hero-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button>
+          <button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreProjects')} <span aria-hidden="true">→</span></button>
+        </div>
+        <div className="home-proof"><span>{t('home.heroTrust')}</span></div>
+      </div>
+      <div className="home-hero-visual">
+        <svg className="hero-commit-graph" viewBox="0 0 680 520" aria-hidden="true" focusable="false">
+          <path d="M48 132h128c45 0 39 62 86 62h65"/>
+          <path d="M154 395h110c48 0 49-62 98-62h112"/>
+          <path d="M262 194v74c0 37 42 65 83 65"/>
+          <path d="M327 194v-84c0-46 51-55 95-55h83"/>
+          <circle cx="48" cy="132" r="7"/><circle cx="327" cy="194" r="8"/>
+          <circle cx="481" cy="333" r="7"/><circle cx="505" cy="55" r="7"/>
+        </svg>
+        <span className="hero-orb hero-orb-one" aria-hidden="true"/>
+        <span className="hero-orb hero-orb-two" aria-hidden="true"/>
+        <span className="hero-orb hero-orb-three" aria-hidden="true"/>
+        <div className="home-demo" aria-label={t('home.demoLabel')}>
+          <div className="home-demo-top"><div><span className="demo-dot"/><b>{t('home.demoTitle')}</b></div><span className="demo-status">{t('home.pendingDecision')}</span></div>
+          <div className="home-demo-branch"><span>⑂</span> feature/session-refresh <small>{t('home.demoTime')}</small></div>
+          <div className="home-diff"><div className="demo-file"><span>src/auth/session.ts</span><span>+2 −1</span></div><div className="diff-line removed"><code>−</code><span>return refresh(token);</span></div><div className="diff-line added"><code>+</code><span>if (isExpired(token)) {'{'} return null; {'}'}</span></div><div className="diff-line added"><code>+</code><span>return refresh(token);</span></div></div>
+          <div className="home-ai-note"><span className="note-icon">✦</span><div><b>{t('home.aiExplanation')}</b><p>{t('home.aiExplanationBody')}</p></div></div>
+          <div className="home-demo-decision"><span><i/> {t('home.yourDecision')}</span><button onClick={()=>navigate(user?'workspace':'register')}>{t('home.reviewChanges')}</button></div>
+        </div>
+      </div>
     </div></section>
     <section className="home-process"><div className="home-section-intro"><p className="eyebrow">{t('home.processEyebrow')}</p><h2>{t('home.processTitleFirst')}<br/>{t('home.processTitleSecond')}</h2><p>{t('home.processIntro')}</p></div><div className="home-process-grid"><article><span>{t('home.observe')}</span><h3>{t('home.observeTitle')}</h3><p>{t('home.observeBody')}</p><b>{t('home.historyClear')}{' '}<i>→</i></b></article><article><span>{t('home.understand')}</span><h3>{t('home.understandTitle')}</h3><p>{t('home.understandBody')}</p><b>{t('prs.contextReview')}{' '}<i>→</i></b></article><article><span>{t('home.collaborate')}</span><h3>{t('home.collaborateTitle')}</h3><p>{t('home.collaborateBody')}</p><b>{t('home.transparentCollaboration')}{' '}<i>→</i></b></article></div></section>
     {feedLoading||feed.length>=3?<section className="home-community"><div className="home-community-copy"><p className="eyebrow">{t('home.communityEyebrow')}</p><h2>{t('home.communityTitleFirst')}<br/>{t('home.communityTitleSecond')}</h2><p>{t('home.communityIntro')}</p><button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreCommunity')}{' '}<span>→</span></button></div><div className="home-project-rail" aria-busy={feedLoading} id="home-project-rail">{feedLoading?<div className="home-feed-skeleton" role="status" aria-label={t('home.loadingProjects')}><i/><i/><i/></div>:feed.slice(0,5).map((item,index)=><article className="home-project-card" key={item.id}><div className="project-card-top"><span>0{index+1}</span><small>{t('home.projectBadge')}</small></div><b>{item.username}/{item.name}</b><p>{item.description||t('home.projectFallback')}</p><div className="project-card-foot"><span>☆ {item.stars_count}</span><button onClick={()=>navigate('feed')}>{t('home.viewProject')}</button></div></article>)}</div>{feed.length>2&&<div className="rail-controls"><span>{t('feed.exploreMore')}</span><button aria-label={t('feed.searchPrevious')} onClick={()=>document.getElementById('home-project-rail')?.scrollBy({left:-280,behavior:'smooth'})}>←</button><button aria-label={t('feed.searchMore')} onClick={()=>document.getElementById('home-project-rail')?.scrollBy({left:280,behavior:'smooth'})}>→</button></div>}</section>:feedError?null:<section className="home-community-empty"><div><p className="eyebrow">{t('feed.eyebrow')}</p><h2>{t('home.emptyTitleFirst')}<br/>{t('home.emptyTitleSecond')}</h2><p>{t('home.emptyBody')}</p></div><button className="action" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}{' '}<span>→</span></button></section>}

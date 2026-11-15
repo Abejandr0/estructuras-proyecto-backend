@@ -272,7 +272,7 @@
   "home.heroEyebrow": "AIVERSE · VERSION CONTROL WITH CONTEXT",
   "home.heroTitleFirst": "Every change,",
   "home.heroTitleSecond": "explained.",
-  "home.heroLead": "Review code with your team, understand AI suggestions, and choose what to merge. The call is yours.",
+  "home.heroLead": "AI explains. You decide.",
   "home.createSpace": "Create my space",
   "home.exploreProjects": "Explore projects",
   "home.freeToStart": "✓ Free to start",
@@ -283,8 +283,8 @@
   "home.pendingDecision": "DECISION PENDING",
   "home.demoTime": "· 8 min ago",
   "home.aiExplanation": "AIVerse explanation",
-  "home.aiExplanationBody": "This check avoids refreshing a session that has already expired. See how the tests handle that case.",
-  "home.yourDecision": "You choose what happens next",
+  "home.aiExplanationBody": "Avoids refreshing an already expired session.",
+  "home.yourDecision": "You decide.",
   "home.reviewChanges": "Review changes →",
   "home.processEyebrow": "HOW YOU WORK IN AIVERSE",
   "home.processTitleFirst": "From diff to a decision",
@@ -523,5 +523,6 @@
   "nav.myAccount": "My account",
   "nav.openMenu": "Open navigation menu",
   "nav.closeMenu": "Close navigation menu",
-  "error.workspaceConnection": "Could not connect to AIVerse: {{error}}"
+  "error.workspaceConnection": "Could not connect to AIVerse: {{error}}",
+  "home.heroTrust": "Free to start · No card · You decide."
 }

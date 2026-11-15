@@ -272,7 +272,7 @@
   "home.heroEyebrow": "AIVERSE · VERSIONAMIENTO CON CONTEXTO",
   "home.heroTitleFirst": "Cada cambio,",
   "home.heroTitleSecond": "explicado.",
-  "home.heroLead": "Revisa el código con tu equipo, entiende las sugerencias de IA y decide qué integrar. El criterio sigue siendo tuyo.",
+  "home.heroLead": "La IA explica. Tú decides.",
   "home.createSpace": "Crear mi espacio",
   "home.exploreProjects": "Explorar proyectos",
   "home.freeToStart": "✓ Gratis para comenzar",
@@ -283,8 +283,8 @@
   "home.pendingDecision": "DECISIÓN PENDIENTE",
   "home.demoTime": "· hace 8 min",
   "home.aiExplanation": "Explicación de AIVerse",
-  "home.aiExplanationBody": "La comprobación evita renovar una sesión que ya expiró. Revisa cómo se maneja ese caso en las pruebas.",
-  "home.yourDecision": "Tú decides el siguiente paso",
+  "home.aiExplanationBody": "Evita renovar una sesión que ya expiró.",
+  "home.yourDecision": "Tú decides.",
   "home.reviewChanges": "Revisar cambios →",
   "home.processEyebrow": "ASÍ TRABAJAS EN AIVERSE",
   "home.processTitleFirst": "Del diff a una decisión",
@@ -523,5 +523,6 @@
   "nav.myAccount": "Mi cuenta",
   "nav.openMenu": "Abrir menú de navegación",
   "nav.closeMenu": "Cerrar menú de navegación",
-  "error.workspaceConnection": "No se pudo conectar con AIVerse: {{error}}"
+  "error.workspaceConnection": "No se pudo conectar con AIVerse: {{error}}",
+  "home.heroTrust": "Gratis para empezar · Sin tarjeta · Tú decides."
 }
