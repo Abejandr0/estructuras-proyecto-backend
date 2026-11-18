@@ -141,7 +141,7 @@ export default function App() {
     root.dataset.themePreference = theme;
     root.style.colorScheme = dark ? 'dark' : 'light';
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (themeColor) themeColor.content = dark ? '#1c1d29' : '#fbfaf7';
+    if (themeColor) themeColor.content = dark ? '#111315' : '#f5f6f7';
   }, [dark, theme]);
 
   const updateTheme = (nextTheme: Theme) => {
@@ -470,70 +470,172 @@ export default function App() {
 function Homepage({user,navigate}: {user:{username:string}|null;navigate:(page:RoutePage)=>void}) {
   const {t} = useI18n();
   return <>
-    <section className="home-hero"><div className="site-container home-hero-inner">
-      <div className="home-hero-copy">
-        <p className="eyebrow">{t('home.heroEyebrow')}</p>
-        <h1><span>{t('home.heroTitleFirst')}</span><span className="hero-title-accent">{t('home.heroTitleSecond')}</span></h1>
-        <p className="home-hero-lead">{t('home.heroLead')}</p>
-        <div className="home-hero-actions">
-          <button className="action hero-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button>
-          <button className="home-text-link" onClick={()=>navigate('feed')}>{t('home.exploreProjects')} <span aria-hidden="true">→</span></button>
-        </div>
-      <div className="home-proof"><span>{t('home.heroTrust')}</span></div>
-      </div>
-      <div className="home-hero-visual">
-        <svg className="hero-commit-graph" viewBox="0 0 680 520" aria-hidden="true" focusable="false">
-          <path d="M48 132h128c45 0 39 62 86 62h65"/>
-          <path d="M154 395h110c48 0 49-62 98-62h112"/>
-          <path d="M262 194v74c0 37 42 65 83 65"/>
-          <path d="M327 194v-84c0-46 51-55 95-55h83"/>
-          <circle cx="48" cy="132" r="7"/><circle cx="327" cy="194" r="8"/>
-          <circle cx="481" cy="333" r="7"/><circle cx="505" cy="55" r="7"/>
-        </svg>
-        <div className="home-demo" aria-label={t('home.demoLabel')}>
-          <div className="home-demo-top"><div><span className="demo-dot"/><b>{t('home.demoTitle')}</b></div><span className="demo-status">{t('home.pendingDecision')}</span></div>
-          <div className="home-demo-branch"><span>⑂</span> feature/session-refresh <small>{t('home.demoTime')}</small></div>
-          <div className="home-diff"><div className="demo-file"><span>src/auth/session.ts</span><span>+2 −1</span></div><div className="diff-line removed"><code>−</code><span>return refresh(token);</span></div><div className="diff-line added"><code>+</code><span>if (isExpired(token)) {'{'} return null; {'}'}</span></div><div className="diff-line added"><code>+</code><span>return refresh(token);</span></div></div>
-          <div className="home-ai-note"><span className="note-icon">✦</span><div><b>{t('home.aiExplanation')}</b><p>{t('home.aiExplanationBody')}</p></div></div>
-          <div className="home-demo-decision"><span><i/> {t('home.reviewReady')}</span><button onClick={()=>navigate(user?'workspace':'register')}>{t('home.reviewChanges')}</button></div>
-        </div>
-      </div>
-    </div></section>
-    <section className="home-process"><div className="site-container home-process-inner"><div className="home-section-intro"><p className="eyebrow">{t('home.processEyebrow')}</p><h2>{t('home.processTitleFirst')}<br/>{t('home.processTitleSecond')}</h2><p>{t('home.processIntro')}</p></div>
-      <div className="home-process-grid">
-        <article className="bento-card bento-observe">
-          <span className="bento-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false"><path d="M6 4v9a5 5 0 0 0 5 5h7"/><circle cx="6" cy="4" r="2.2"/><circle cx="6" cy="13" r="2.2"/><circle cx="18" cy="18" r="2.2"/></svg></span>
-          <h3>{t('home.observeTitle')}</h3><p>{t('home.observeBody')}</p>
-          <svg className="bento-flow-art bento-branch-art" viewBox="0 0 320 70" fill="none" aria-hidden="true" focusable="false"><path d="M8 35h76c34 0 28-23 64-23h62m-126 23c34 0 28 23 64 23h116"/><circle cx="8" cy="35" r="5"/><circle cx="84" cy="35" r="5"/><circle cx="148" cy="12" r="5"/><circle cx="148" cy="58" r="5"/><circle cx="210" cy="12" r="5"/><circle cx="264" cy="58" r="5"/></svg>
-        </article>
-        <article className="bento-card bento-understand">
-          <div className="bento-understand-copy">
-            <span className="bento-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/></svg></span>
-            <h3>{t('home.understandTitle')}</h3><p>{t('home.understandBody')}</p>
+    <section className="home-serro-hero">
+      <div className="site-container home-serro-hero-inner">
+        <div className="home-serro-intro">
+          <p className="eyebrow"><span className="hero-signal"/>{t('home.heroEyebrow')}</p>
+          <h1>{t('home.heroTitleFirst')}<br/><span>{t('home.heroTitleSecond')}</span></h1>
+          <p className="home-serro-lead">{t('home.heroLead')}</p>
+          <div className="home-serro-actions">
+            <button className="action home-serro-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}</button>
+            <button className="home-serro-secondary" onClick={()=>navigate('feed')}>{t('home.exploreProjects')}</button>
           </div>
-          <div className="bento-ai-preview">
-            <div className="bento-ai-preview-head"><span className="bento-ai-symbol" aria-hidden="true">✦</span><strong>{t('home.bentoReviewLabel')}</strong><span className="bento-ai-badge">{t('home.bentoReviewBadge')}</span></div>
-            <p>{t('home.bentoReviewSummary')}</p>
-            <div className="bento-ai-detail"><span aria-hidden="true">✓</span>{t('home.bentoReviewDetail')}</div>
-            <div className="bento-ai-chips"><span>{t('home.bentoRisk')}</span><span>{t('home.bentoSuggestion')}</span></div>
+          <p className="home-serro-trust">{t('home.heroTrust')}</p>
+        </div>
+
+        <div className="home-serro-preview" role="group" aria-label={t('home.previewAriaLabel')}>
+          <div className="home-serro-preview-bar">
+            <div className="home-serro-preview-brand"><AIVerseMark/><b>AIVerse</b><span>/</span><span>{t('home.previewProject')}</span></div>
+            <span className="home-serro-preview-label">{t('home.previewLabel')}</span>
+            <span className="home-serro-preview-branch">⑂ main</span>
           </div>
-        </article>
-        <article className="bento-card bento-collaborate">
-          <span className="bento-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false"><path d="M15 20v-1.6a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="8.5" cy="7" r="4"/><path d="M16 11a4 4 0 1 0 0-8m6 17v-1.6a4 4 0 0 0-3-3.9"/></svg></span>
-          <h3>{t('home.collaborateTitle')}</h3><p>{t('home.collaborateBody')}</p>
-          <svg className="bento-flow-art bento-merge-art" viewBox="0 0 320 70" fill="none" aria-hidden="true" focusable="false"><path d="M8 12h63c37 0 29 23 68 23h72c27 0 26 23 61 23h40M8 58h63c37 0 29-23 68-23"/><circle cx="8" cy="12" r="5"/><circle cx="8" cy="58" r="5"/><circle cx="139" cy="35" r="5"/><circle cx="211" cy="35" r="5"/><circle cx="272" cy="58" r="5"/></svg>
-        </article>
+          <div className="home-serro-preview-layout">
+            <aside className="home-serro-preview-sidebar">
+              <p>{t('home.previewRepository')}</p>
+              <b>{t('home.previewProject')}</b>
+              <span className="is-current">{t('home.previewOverview')}</span>
+              <span>{t('home.previewHistory')}</span>
+              <span>{t('home.previewBranches')}</span>
+              <span>{t('home.previewFiles')}</span>
+              <small>{t('home.previewDemo')}</small>
+            </aside>
+            <div className="home-serro-preview-main">
+              <div className="home-serro-preview-heading">
+                <div><p>{t('home.previewOverview')}</p><h2>{t('home.previewTitle')}</h2><span>{t('home.previewDescription')}</span></div>
+                <span className="home-serro-preview-current">main</span>
+              </div>
+              <div className="home-serro-preview-metrics">
+                <div><span>{t('home.previewCommits')}</span><b>18</b><small>{t('home.previewMetricOne')}</small></div>
+                <div><span>{t('home.previewBranches')}</span><b>03</b><small>{t('home.previewMetricTwo')}</small></div>
+                <div><span>{t('home.previewFiles')}</span><b>24</b><small>{t('home.previewMetricThree')}</small></div>
+              </div>
+              <figure className="home-serro-preview-map">
+                <figcaption>{t('home.previewBranchMap')}<span>main · feature/context · review</span></figcaption>
+                <svg viewBox="0 0 640 155" fill="none" aria-hidden="true" focusable="false">
+                  <path className="preview-guide" d="M0 30H640M0 77H640M0 124H640"/>
+                  <path className="preview-main-line" d="M22 77H615"/>
+                  <path className="preview-branch-line" d="M122 77c54 0 55-47 110-47h135c55 0 55 47 110 47h138"/>
+                  <path className="preview-branch-line preview-branch-muted" d="M310 77c42 0 42 47 84 47h100c32 0 30-47 62-47"/>
+                  <circle className="preview-node" cx="22" cy="77" r="5"/><circle className="preview-node" cx="122" cy="77" r="5"/>
+                  <circle className="preview-node preview-node-active" cx="232" cy="30" r="6"/><circle className="preview-node" cx="367" cy="30" r="5"/>
+                  <circle className="preview-node" cx="477" cy="77" r="6"/><circle className="preview-node" cx="615" cy="77" r="5"/>
+                  <circle className="preview-node" cx="310" cy="77" r="5"/><circle className="preview-node" cx="394" cy="124" r="5"/><circle className="preview-node" cx="494" cy="124" r="5"/>
+                </svg>
+              </figure>
+              <div className="home-serro-preview-activity">
+                <p>{t('home.previewActivity')}</p>
+                <div><span className="preview-activity-node is-active"/><b>{t('home.previewChangeOne')}</b><small>feature/context · 8f3a2d1</small></div>
+                <div><span className="preview-activity-node"/><b>{t('home.previewChangeTwo')}</b><small>main · 41c8e90</small></div>
+              </div>
+            </div>
+            <aside className="home-serro-preview-context">
+              <p className="home-serro-preview-context-label">{t('home.previewContextLabel')}</p>
+              <h3>{t('home.previewContextTitle')}</h3>
+              <p>{t('home.previewContextBody')}</p>
+              <div className="preview-context-rule"/>
+              <span>{t('home.previewCurrentBranch')}</span><b>feature/context</b>
+              <span>{t('home.previewProjectState')}</span><b>{t('home.previewInProgress')}</b>
+            </aside>
+          </div>
+          <div className="home-serro-preview-foot"><span>{t('home.previewFootnote')}</span><span>{t('home.previewFlow')}</span></div>
+        </div>
+        <div className="home-serro-ribbon"><span>{t('home.ribbonHistory')}</span><span>{t('home.ribbonBranches')}</span><span>{t('home.ribbonContext')}</span><span>{t('home.ribbonDecisions')}</span></div>
       </div>
-    </div></section>
-    <section className="home-community-learning"><div className="site-container home-community-grid">
-      <article className="home-resource-card home-community-card"><p className="eyebrow">{t('home.communityEyebrow')}</p><h2>{t('home.communityCardTitle')}</h2><p>{t('home.communityCardBody')}</p><button className="action home-resource-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button></article>
-      <article className="home-resource-card home-documentation-card"><p className="eyebrow">{t('home.learningEyebrow')}</p><h2>{t('home.docsCardTitle')}</h2><p>{t('home.docsCardBody')}</p><button className="home-resource-secondary" onClick={()=>navigate('docs')}>{t('home.openDocs')} <span aria-hidden="true">→</span></button></article>
-    </div></section>
-    <section className="home-plans"><div className="site-container home-plans-inner">
-      <div className="home-plans-copy"><p className="eyebrow">{t('home.plansEyebrow')}</p><h2>{t('home.plansTitleFirst')}<br/><span>{t('home.plansTitleSecond')}</span></h2><button className="action home-plans-cta" onClick={()=>navigate('pricing')}>{t('home.comparePlans')} <span aria-hidden="true">→</span></button></div>
-      <div className="home-growth-visual" aria-hidden="true"><svg viewBox="0 0 560 330" fill="none" focusable="false"><rect className="growth-panel growth-panel-one" x="30" y="120" width="118" height="148" rx="18"/><rect className="growth-panel growth-panel-two" x="174" y="72" width="118" height="148" rx="18"/><rect className="growth-panel growth-panel-three" x="318" y="24" width="118" height="148" rx="18"/><rect className="growth-line growth-accent" x="51" y="151" width="45" height="7" rx="3.5"/><rect className="growth-line" x="51" y="170" width="72" height="5" rx="2.5"/><rect className="growth-line growth-accent" x="195" y="103" width="45" height="7" rx="3.5"/><rect className="growth-line" x="195" y="122" width="72" height="5" rx="2.5"/><rect className="growth-line growth-accent" x="339" y="55" width="45" height="7" rx="3.5"/><rect className="growth-line" x="339" y="74" width="72" height="5" rx="2.5"/><path className="growth-path" d="M55 259c66 0 63-46 132-46s67-50 135-50 64-49 128-49"/><circle className="growth-node" cx="55" cy="259" r="7"/><circle className="growth-node" cx="187" cy="213" r="7"/><circle className="growth-node" cx="322" cy="163" r="7"/><circle className="growth-node" cx="450" cy="114" r="7"/></svg></div>
-    </div></section>
-    <section className="home-final-cta"><div className="site-container home-final-cta-inner"><div className="home-final-copy"><h2>{t('home.finalTitleFirst')}<br/><span>{t('home.finalTitleSecond')}</span></h2><button className="action home-final-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')} <span aria-hidden="true">→</span></button><small>{t('home.trustLine')}</small></div><div className="home-final-visual" aria-hidden="true"><svg viewBox="0 0 520 360" fill="none" focusable="false"><path className="final-branch-line" d="M29 88H122c46 0 46 44 92 44h53c48 0 47-44 95-44h94c30 0 30 28 30 58v50c0 24-22 36-46 36h-47c-43 0-43 35-86 35H184c-40 0-62-20-62-60v-75"/><circle className="final-node" cx="29" cy="88" r="7"/><circle className="final-node" cx="122" cy="88" r="7"/><circle className="final-node" cx="214" cy="132" r="7"/><circle className="final-node" cx="267" cy="132" r="8"/><circle className="final-node" cx="362" cy="88" r="7"/><circle className="final-node" cx="456" cy="88" r="7"/><circle className="final-node" cx="486" cy="196" r="7"/><circle className="final-node" cx="440" cy="232" r="7"/><circle className="final-node" cx="393" cy="232" r="7"/><circle className="final-node" cx="307" cy="267" r="7"/><circle className="final-node" cx="184" cy="267" r="7"/><circle className="final-node" cx="122" cy="207" r="7"/><circle className="final-node" cx="122" cy="132" r="7"/></svg><span className="final-orb final-orb-one"/><span className="final-orb final-orb-two"/><span className="final-orb final-orb-three"/></div></div></section>
+    </section>
+
+    <section className="home-serro-story">
+      <div className="site-container home-serro-story-inner">
+        <div className="home-serro-story-copy">
+          <p className="eyebrow">{t('home.thesisEyebrow')}</p>
+          <h2>{t('home.thesisTitleFirst')}<br/><span>{t('home.thesisTitleSecond')}</span></h2>
+          <p>{t('home.thesisBody')}</p>
+          <button className="home-serro-text-link" onClick={()=>navigate('docs')}>{t('home.thesisLink')}</button>
+        </div>
+        <figure className="home-serro-chart">
+          <figcaption><span>{t('home.thesisVisualLabel')}</span><span>{t('home.thesisVisualRange')}</span></figcaption>
+          <svg viewBox="0 0 620 250" fill="none" aria-hidden="true" focusable="false">
+            <path className="serro-chart-guide" d="M0 50H620M0 110H620M0 170H620M0 230H620"/>
+            <path className="serro-chart-path serro-chart-path-muted" d="M0 202C76 199 111 184 165 180S253 174 306 153s76-29 133-37 104-23 181-47"/>
+            <path className="serro-chart-path serro-chart-path-blue" d="M0 212C81 207 104 199 165 193s97-1 141-19 74-23 122-25 110-8 192-15"/>
+            <circle className="serro-chart-dot serro-chart-dot-blue" cx="428" cy="149" r="5"/><circle className="serro-chart-dot" cx="620" cy="71" r="5"/>
+          </svg>
+          <div className="home-serro-chart-legend"><span>{t('home.thesisLegendCode')}</span><span>{t('home.thesisLegendContext')}</span><small>{t('home.thesisLegendCaption')}</small></div>
+        </figure>
+      </div>
+    </section>
+
+    <section className="home-serro-connect">
+      <div className="site-container">
+        <div className="home-serro-section-heading">
+          <p className="eyebrow">{t('home.capabilitiesEyebrow')}</p>
+          <h2>{t('home.serroConnectTitle')}</h2>
+          <p>{t('home.capabilitiesIntro')}</p>
+        </div>
+        <div className="home-serro-capability-grid">
+          <article><span className="serro-capability-code">{t('home.capabilityHistoryCode')}</span><div className="serro-capability-visual capability-history" aria-hidden="true"><i/><i/><i/><i/></div><h3>{t('home.observeTitle')}</h3><p>{t('home.observeBody')}</p></article>
+          <article><span className="serro-capability-code">{t('home.capabilityBranchCode')}</span><div className="serro-capability-visual capability-branches" aria-hidden="true"><i/><i/><i/></div><h3>{t('home.branchTitle')}</h3><p>{t('home.branchBody')}</p></article>
+          <article><span className="serro-capability-code">{t('home.capabilityContextCode')}</span><div className="serro-capability-visual capability-context" aria-hidden="true"><i/><i/><i/></div><h3>{t('home.understandTitle')}</h3><p>{t('home.understandBody')}</p></article>
+          <article><span className="serro-capability-code">{t('home.capabilityTeamCode')}</span><div className="serro-capability-visual capability-team" aria-hidden="true"><i/><i/><i/><i/></div><h3>{t('home.collaborateTitle')}</h3><p>{t('home.collaborateBody')}</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section className="home-serro-shared">
+      <div className="site-container home-serro-shared-inner">
+        <div className="home-serro-shared-copy">
+          <p className="eyebrow">{t('home.sharedEyebrow')}</p>
+          <h2>{t('home.sharedTitleFirst')}<br/><span>{t('home.sharedTitleSecond')}</span></h2>
+          <p>{t('home.sharedBody')}</p>
+          <button className="action home-serro-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}</button>
+        </div>
+        <div className="home-serro-network" role="img" aria-label={t('home.sharedDiagramLabel')}>
+          <svg viewBox="0 0 400 400" fill="none" aria-hidden="true" focusable="false">
+            <circle className="network-ring" cx="200" cy="200" r="142"/><circle className="network-ring network-ring-inner" cx="200" cy="200" r="82"/>
+            <path className="network-spokes" d="M200 58V142M200 258V342M58 200h84m116 0h84M100 100l59 59m82 82 59 59M300 100l-59 59m-82 82-59 59"/>
+            <circle className="network-node" cx="200" cy="58" r="6"/><circle className="network-node" cx="342" cy="200" r="6"/><circle className="network-node" cx="200" cy="342" r="6"/><circle className="network-node" cx="58" cy="200" r="6"/>
+            <circle className="network-node network-node-highlight" cx="100" cy="100" r="7"/><circle className="network-node" cx="300" cy="100" r="7"/><circle className="network-node" cx="300" cy="300" r="7"/><circle className="network-node" cx="100" cy="300" r="7"/>
+          </svg>
+          <span className="network-label network-label-top">{t('home.networkCode')}</span>
+          <span className="network-label network-label-right">{t('home.networkHistory')}</span>
+          <span className="network-label network-label-bottom">{t('home.networkContext')}</span>
+          <span className="network-label network-label-left">{t('home.networkTeam')}</span>
+          <span className="network-center"><AIVerseMark/></span>
+        </div>
+      </div>
+    </section>
+
+    <section className="home-serro-cases">
+      <div className="site-container">
+        <div className="home-serro-cases-heading">
+          <p className="eyebrow">{t('home.rolesEyebrow')}</p>
+          <h2>{t('home.rolesTitleFirst')}<br/><span>{t('home.rolesTitleSecond')}</span></h2>
+          <p>{t('home.rolesIntro')}</p>
+        </div>
+        <div className="home-serro-role-list">
+          <article><span>{t('home.roleDeveloperCode')}</span><h3>{t('home.roleDeveloperTitle')}</h3><p>{t('home.roleDeveloperBody')}</p></article>
+          <article><span>{t('home.roleStudentCode')}</span><h3>{t('home.roleStudentTitle')}</h3><p>{t('home.roleStudentBody')}</p></article>
+          <article><span>{t('home.roleTeamCode')}</span><h3>{t('home.roleTeamTitle')}</h3><p>{t('home.roleTeamBody')}</p></article>
+          <article><span>{t('home.roleMaintainerCode')}</span><h3>{t('home.roleMaintainerTitle')}</h3><p>{t('home.roleMaintainerBody')}</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section className="home-serro-resources">
+      <div className="site-container home-serro-resource-grid">
+        <article><p className="eyebrow">{t('home.communityEyebrow')}</p><h2>{t('home.communityCardTitle')}</h2><p>{t('home.communityCardBody')}</p><button className="home-serro-text-link" onClick={()=>navigate('feed')}>{t('home.openCommunity')}</button></article>
+        <article><p className="eyebrow">{t('home.learningEyebrow')}</p><h2>{t('home.docsCardTitle')}</h2><p>{t('home.docsCardBody')}</p><button className="home-serro-text-link" onClick={()=>navigate('docs')}>{t('home.openDocs')}</button></article>
+        <article><p className="eyebrow">{t('home.plansEyebrow')}</p><h2>{t('home.plansTitleFirst')}<br/><span>{t('home.plansTitleSecond')}</span></h2><p>{t('home.plansCardBody')}</p><button className="home-serro-text-link" onClick={()=>navigate('pricing')}>{t('home.comparePlans')}</button></article>
+      </div>
+    </section>
+
+    <section className="home-serro-cta">
+      <div className="site-container home-serro-cta-inner">
+        <p className="eyebrow">{t('home.finalEyebrow')}</p>
+        <h2>{t('home.finalTitleFirst')}<br/><span>{t('home.finalTitleSecond')}</span></h2>
+        <p>{t('home.trustLine')}</p>
+        <div className="home-serro-actions"><button className="action home-serro-primary" onClick={()=>navigate(user?'workspace':'register')}>{t('nav.register')}</button><button className="home-serro-secondary" onClick={()=>navigate('login')}>{t('nav.login')}</button></div>
+      </div>
+    </section>
   </>;
 }
 
@@ -637,7 +739,7 @@ function SiteHeader({page,user,navigate,theme,dark,onThemeChange}: {page:Page;us
   const [menuOpen,setMenuOpen] = useState(false);
   useEffect(()=>setMenuOpen(false),[page]);
   const closeMenu = () => setMenuOpen(false);
-  return <header className={`site-header${menuOpen?' is-menu-open':''}`}><div className="site-container site-header-inner"><button className="wordmark" onClick={()=>{closeMenu();navigate('home')}}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><button type="button" className="mobile-menu-toggle" aria-label={menuOpen?t('nav.closeMenu'):t('nav.openMenu')} aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={()=>setMenuOpen(value=>!value)}><span aria-hidden="true">{menuOpen?'×':'☰'}</span></button><nav id="primary-navigation" aria-label={t('nav.label')}><button className={page==='home'?'active':''} onClick={()=>{closeMenu();navigate('home')}}>{t('nav.home')}</button><button className={page==='feed'?'active':''} onClick={()=>{closeMenu();navigate('feed')}}>{t('nav.community')}</button><button className={page==='docs'?'active':''} onClick={()=>{closeMenu();navigate('docs')}}>{t('nav.guides')}</button><button className={page==='pricing'?'active':''} onClick={()=>{closeMenu();navigate('pricing')}}>{t('nav.plans')}</button><button className="mobile-nav-action" onClick={()=>{closeMenu();navigate(user?'account':'login')}}>{user?t('nav.myAccount'):t('nav.login')}</button><button className="mobile-nav-action mobile-nav-primary" onClick={()=>{closeMenu();navigate(user?'workspace':'register')}}>{user?t('nav.openWorkspace'):t('nav.register')} →</button></nav><div className="site-header-actions"><div className="header-preferences"><LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={onThemeChange} compact/><span className="header-preferences-divider" aria-hidden="true"/></div>{user?<button className="account-link" onClick={()=>navigate('account')}>@{user.username}</button>:<button className="site-login" onClick={()=>navigate('login')}>{t('nav.login')}</button>}<button className="action site-cta" onClick={()=>navigate(user?'workspace':'register')}>{user?t('nav.openWorkspace'):t('nav.register')} <span aria-hidden="true">→</span></button></div></div></header>;
+  return <header className={`site-header${menuOpen?' is-menu-open':''}`}><div className="site-container site-header-inner"><button className="wordmark" onClick={()=>{closeMenu();navigate('home')}}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><button type="button" className="mobile-menu-toggle" aria-label={menuOpen?t('nav.closeMenu'):t('nav.openMenu')} aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={()=>setMenuOpen(value=>!value)}><span aria-hidden="true">{menuOpen?'×':'☰'}</span></button><nav id="primary-navigation" aria-label={t('nav.label')}><button className={page==='home'?'active':''} onClick={()=>{closeMenu();navigate('home')}}>{t('nav.home')}</button><button className={page==='feed'?'active':''} onClick={()=>{closeMenu();navigate('feed')}}>{t('nav.community')}</button><button className={page==='docs'?'active':''} onClick={()=>{closeMenu();navigate('docs')}}>{t('nav.guides')}</button><button className={page==='pricing'?'active':''} onClick={()=>{closeMenu();navigate('pricing')}}>{t('nav.plans')}</button><button className="mobile-nav-action" onClick={()=>{closeMenu();navigate(user?'account':'login')}}>{user?t('nav.myAccount'):t('nav.login')}</button><button className="mobile-nav-action mobile-nav-primary" onClick={()=>{closeMenu();navigate(user?'workspace':'register')}}>{user?t('nav.openWorkspace'):t('nav.register')}</button></nav><div className="site-header-actions"><div className="header-preferences"><LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={onThemeChange} compact/><span className="header-preferences-divider" aria-hidden="true"/></div>{user?<button className="account-link" onClick={()=>navigate('account')}>@{user.username}</button>:<button className="site-login" onClick={()=>navigate('login')}>{t('nav.login')}</button>}<button className="action site-cta" onClick={()=>navigate(user?'workspace':'register')}>{user?t('nav.openWorkspace'):t('nav.register')}</button></div></div></header>;
 }
 
 function SiteFooter({navigate}: {navigate: (page: RoutePage)=>void}) {
