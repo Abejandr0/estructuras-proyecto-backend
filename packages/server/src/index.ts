@@ -16,6 +16,7 @@ import {Repository} from 'aiverse-core';
 import {activities, cliTokens, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
 import {AuthError, createAccount, createSession, currentCliUser, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
 import {createWorkspaceRepositoriesRouter} from './workspace-repositories.js';
+import {imageContentType} from './image-media.js';
 
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
 const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
@@ -148,12 +149,31 @@ app.get('/api/repo/file', async (request, response, next) => {
   try {
     const filePath = typeof request.query.path === 'string' ? request.query.path : '';
     const entry = (await repo.tree()).find(item => item.path === filePath);
-    if (!entry) { response.status(404).json({error: 'File not found'}); return; }
-    const object = await repo.readObject(entry.hash);
-    response.json({path: filePath, content: object.body.toString('utf8'), hash: entry.hash});
+    const content = await repo.readFile(filePath);
+    response.json({path: filePath, content: content.toString('utf8'), hash: entry?.hash ?? ''});
   } catch (error) { next(error); }
 });
-app.get('/api/structures', (_request, response) => response.json(repo.getStructureSnapshot()));
+app.get('/api/repo/file/raw', async (request, response, next) => {
+  try {
+    const filePath = typeof request.query.path === 'string' ? request.query.path : '';
+    const contentType = imageContentType(filePath);
+    if (!contentType) { response.status(415).json({error: 'Image preview is not supported for this file.'}); return; }
+    const content = await repo.readFile(filePath);
+    response.set('X-Content-Type-Options', 'nosniff').set('Content-Security-Policy', "default-src 'none'; sandbox").type(contentType).send(content);
+  } catch (error) { next(error); }
+});
+app.post('/api/repo/file', async (request, response, next) => {
+  try {
+    const filePath = request.body?.path;
+    const content = request.body?.content;
+    if (typeof filePath !== 'string' || typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > 1_000_000) {
+      response.status(400).json({error: 'El archivo o su contenido no son válidos.'}); return;
+    }
+    await repo.writeFile(filePath, content);
+    response.json({ok: true});
+  } catch (error) { next(error); }
+});
+app.get('/api/structures', async (_request, response, next) => { try { response.json(await repo.getStructureSnapshot()); } catch (error) { next(error); } });
 
 const authLimiter = rateLimit({windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false});
 const aiLimiter = rateLimit({windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false});

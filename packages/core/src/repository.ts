@@ -42,6 +42,8 @@ export class Repository{readonly gitDir:string;private objects=new HashTable<str
   const flags=fsConstants.O_WRONLY|fsConstants.O_CREAT|fsConstants.O_TRUNC|(fsConstants.O_NOFOLLOW??0),handle=await fs.open(full,flags,0o666);
   try{const info=await handle.stat();if(!info.isFile())throw new Error('Repository entry is not a regular file');await handle.writeFile(contents)}finally{await handle.close()}
  }
+ async readFile(relative:string):Promise<Buffer>{return this.readWorktreeFile(relative)}
+ async writeFile(relative:string,contents:string|Buffer):Promise<void>{await this.writeWorktreeFile(relative,contents)}
  private async removeWorktreeFile(relative:string):Promise<void>{const full=await this.safeParentPath(relative,false);await fs.rm(full,{force:true});let parent=path.dirname(full);while(parent!==this.root&&isWithin(this.root,parent)){try{await fs.rmdir(parent)}catch(error){const code=(error as NodeJS.ErrnoException).code;if(code!=='ENOENT')break}parent=path.dirname(parent)}}
  async readObject(hash:string):Promise<{kind:ObjectKind;body:Buffer}>{
   if(!validObjectHash(hash,this.hashAlgorithm))throw new Error('Invalid object hash');
@@ -162,7 +164,7 @@ export class Repository{readonly gitDir:string;private objects=new HashTable<str
   for(const value of entries){const entry=value as Partial<TreeEntry>;if(!validTreeSegment(entry.name)||!validObjectHash(entry.hash,this.hashAlgorithm)||(entry.kind!=='blob'&&entry.kind!=='tree')||typeof entry.mode!=='string')throw new Error('Invalid tree entry');const relative=prefix?prefix+'/'+entry.name:entry.name;if(!validRepositoryPath(relative))throw new Error('Invalid tree path');if(entry.kind==='tree')out.push(...await this.flattenTree(entry.hash,relative,nextAncestors));else out.push({path:relative,mode:entry.mode,hash:entry.hash});if(out.length>250_000)throw new Error('Tree contains too many entries')}
   return out
  }
- getStructureSnapshot(){return{objectBuckets:this.objects.bucketSnapshot()}}
+ async getStructureSnapshot(){const hashes=await this.objectHashes(),objectIndex=new HashTable<string,true>();for(const hash of hashes)objectIndex.set(hash,true);return{objectCount:hashes.length,objectBuckets:objectIndex.bucketSnapshot()}}
  async workingTreeDiff():Promise<WorkingTreeChange[]>{
   const committed=await this.tree(),state=await this.status(),changes:WorkingTreeChange[]=[];
   for(const entry of committed){if(!state.modified.includes(entry.path))continue;const oldText=(await this.readObject(entry.hash)).body.toString('utf8');let newText='';let status:WorkingTreeChange['status']='modified';try{newText=(await this.readWorktreeFile(entry.path)).toString('utf8')}catch{status='deleted'}changes.push({path:entry.path,status,oldText,newText,lines:boundedDiffLines(oldText,newText)})}

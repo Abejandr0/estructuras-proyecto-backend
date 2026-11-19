@@ -4,6 +4,7 @@ import path from 'node:path';
 import {Repository} from 'aiverse-core';
 import {currentCliUser, currentUser, requireCsrf} from './auth.js';
 import {repositories} from './database.js';
+import {imageContentType} from './image-media.js';
 
 type WorkspaceHandler = (repository: Repository, request: express.Request, response: express.Response) => Promise<void>;
 
@@ -80,14 +81,30 @@ export function createWorkspaceRepositoriesRouter(repositoryStorageRoot: string)
     response.json(await repository.tree(typeof request.query.ref === 'string' ? request.query.ref : undefined));
   }, false, repositoryStorageRoot));
   router.get('/:repositoryId/workspace/diff', repositoryRoute(async (repository, _request, response) => { response.json(await repository.workingTreeDiff()); }));
-  router.get('/:repositoryId/workspace/structures', repositoryRoute(async (repository, _request, response) => { response.json(repository.getStructureSnapshot()); }));
+  router.get('/:repositoryId/workspace/structures', repositoryRoute(async (repository, _request, response) => { response.json(await repository.getStructureSnapshot()); }));
   router.get('/:repositoryId/workspace/file', repositoryRoute(async (repository, request, response) => {
     const filePath = typeof request.query.path === 'string' ? request.query.path : '';
     const entry = (await repository.tree()).find(item => item.path === filePath);
-    if (!entry) { response.status(404).json({error: 'Archivo no encontrado.'}); return; }
-    const object = await repository.readObject(entry.hash);
-    response.json({path: filePath, content: object.body.toString('utf8'), hash: entry.hash});
+    const content = await repository.readFile(filePath);
+    response.json({path: filePath, content: content.toString('utf8'), hash: entry?.hash ?? ''});
   }));
+  router.get('/:repositoryId/workspace/file/raw', repositoryRoute(async (repository, request, response) => {
+    const filePath = typeof request.query.path === 'string' ? request.query.path : '';
+    const contentType = imageContentType(filePath);
+    if (!contentType) { response.status(415).json({error: 'No se puede mostrar una vista previa para este archivo.'}); return; }
+    const content = await repository.readFile(filePath);
+    response.set('X-Content-Type-Options', 'nosniff').set('Content-Security-Policy', "default-src 'none'; sandbox").type(contentType).send(content);
+  }));
+
+  router.post('/:repositoryId/workspace/file', repositoryRoute(async (repository, request, response) => {
+    const filePath = request.body?.path;
+    const content = request.body?.content;
+    if (typeof filePath !== 'string' || typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > 1_000_000) {
+      response.status(400).json({error: 'El archivo o su contenido no son válidos.'}); return;
+    }
+    await repository.writeFile(filePath, content);
+    response.json({ok: true});
+  }, true));
 
   router.post('/:repositoryId/workspace/add', repositoryRoute(async (repository, request, response) => {
     response.json({staged: await repository.add(request.body.paths ?? [])});

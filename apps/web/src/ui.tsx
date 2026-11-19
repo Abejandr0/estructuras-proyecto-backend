@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
-import type {FormEvent} from 'react';
+import type {FormEvent, ReactNode} from 'react';
 import {useI18n} from './i18n';
 import type {Language, MessageKey, TranslationValues} from './i18n';
 
@@ -11,6 +11,7 @@ type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'read
 type Health = {ok: boolean; root?: string; provider: string; sharedRepositoryApiEnabled: boolean; userRepositoriesEnabled?: boolean};
 type AccountUser = {id: string; username: string; display_name: string; email: string; plan?: string; repositoryCount?: number};
 type UserRepository = {id: string; name: string; description: string; isPublic: boolean; stars_count: number; created_at?: string};
+type StructureSnapshot = {objectCount: number; objectBuckets: number[]};
 
 const api = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:4179' : '')).replace(/\/$/, '');
 const eventsUrl = new URL('/api/events', api || window.location.origin);
@@ -98,6 +99,74 @@ function emailMeetsPolicy(value: string): boolean {
   return email.length <= 254 && emailPattern.test(email) && !localPart.startsWith('.') && !localPart.endsWith('.') && !localPart.includes('..');
 }
 
+function inlineMarkdown(text: string): ReactNode[] {
+  const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\*[^*\n]+\*|_[^_\n]+_|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
+  return tokens.map((token, index) => {
+    if (!token) return null;
+    if (token.startsWith('`')) return <code key={index}>{token.slice(1, -1)}</code>;
+    if (token.startsWith('**') || token.startsWith('__')) return <strong key={index}>{inlineMarkdown(token.slice(2, -2))}</strong>;
+    if (token.startsWith('~~')) return <del key={index}>{inlineMarkdown(token.slice(2, -2))}</del>;
+    if ((token.startsWith('*') && token.endsWith('*')) || (token.startsWith('_') && token.endsWith('_'))) return <em key={index}>{inlineMarkdown(token.slice(1, -1))}</em>;
+    const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
+    return <span key={index}>{token}</span>;
+  });
+}
+
+function MarkdownMessage({text}: {text: string}) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const blocks: ReactNode[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (!line.trim()) { index++; continue; }
+    const fence = /^```([\w+-]*)\s*$/.exec(line);
+    if (fence) {
+      const code: string[] = [];
+      index++;
+      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? '')) code.push(lines[index++] ?? '');
+      if (index < lines.length) index++;
+      blocks.push(<pre key={`code-${blocks.length}`}><code className={fence[1] ? `language-${fence[1]}` : undefined}>{code.join('\n')}</code></pre>);
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      const level = heading[1]!.length;
+      const children = inlineMarkdown(heading[2]!);
+      if (level === 1) blocks.push(<h1 key={`h-${blocks.length}`}>{children}</h1>);
+      else if (level === 2) blocks.push(<h2 key={`h-${blocks.length}`}>{children}</h2>);
+      else if (level === 3) blocks.push(<h3 key={`h-${blocks.length}`}>{children}</h3>);
+      else blocks.push(<h4 key={`h-${blocks.length}`}>{children}</h4>);
+      index++; continue;
+    }
+    if (/^\s*>/.test(line)) {
+      const quote: string[] = [];
+      while (index < lines.length && /^\s*>/.test(lines[index] ?? '')) quote.push((lines[index++] ?? '').replace(/^\s*>\s?/, ''));
+      blocks.push(<blockquote key={`quote-${blocks.length}`}>{inlineMarkdown(quote.join(' '))}</blockquote>);
+      continue;
+    }
+    const listMatch = /^\s*(?:([-*+])|(\d+)[.)])\s+(.+)$/.exec(line);
+    if (listMatch) {
+      const ordered = Boolean(listMatch[2]);
+      const items: ReactNode[] = [];
+      while (index < lines.length) {
+        const item = /^\s*(?:([-*+])|(\d+)[.)])\s+(.+)$/.exec(lines[index] ?? '');
+        if (!item || Boolean(item[2]) !== ordered) break;
+        items.push(<li key={items.length}>{inlineMarkdown(item[3]!)}</li>);
+        index++;
+      }
+      blocks.push(ordered ? <ol key={`list-${blocks.length}`}>{items}</ol> : <ul key={`list-${blocks.length}`}>{items}</ul>);
+      continue;
+    }
+    if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) { blocks.push(<hr key={`hr-${blocks.length}`}/>); index++; continue; }
+    const paragraph = [line.trim()];
+    index++;
+    while (index < lines.length && lines[index]?.trim() && !/^(?:```|#{1,6}\s|\s*>|\s*(?:[-*+]|\d+[.)])\s+)/.test(lines[index] ?? '')) paragraph.push(lines[index++]!.trim());
+    blocks.push(<p key={`p-${blocks.length}`}>{inlineMarkdown(paragraph.join(' '))}</p>);
+  }
+  return <div className="ai-markdown">{blocks}</div>;
+}
+
 export default function App() {
   const {lang, setLanguage, t, formatDate, formatNumber, formatPrice} = useI18n();
   const [page, setCurrentPage] = useState<Page>(pageFromLocation);
@@ -137,6 +206,14 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [selected, setSelected] = useState('');
   const [content, setContent] = useState('');
+  const [savedContent, setSavedContent] = useState('');
+  const [fileSaving, setFileSaving] = useState(false);
+  const [fileSaveError, setFileSaveError] = useState('');
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileLoadError, setFileLoadError] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState('');
   const [terminal, setTerminal] = useState('');
   const [output, setOutput] = useState<string[]>([]);
   const [aiTask, setAiTask] = useState<AITask | null>(null);
@@ -145,6 +222,7 @@ export default function App() {
   const activeAiTaskId = useRef<string | null>(null);
   const [aiQuestion, setAiQuestion] = useState('');
   const [showMobileAI, setShowMobileAI] = useState(false);
+  const [showMobileHistory, setShowMobileHistory] = useState(false);
   const [theme, setTheme] = useState<Theme>(readThemePreference);
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
   const [feedSearch, setFeedSearch] = useState('');
@@ -163,6 +241,8 @@ export default function App() {
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [buckets, setBuckets] = useState<number[]>([]);
+  const [objectCount, setObjectCount] = useState(0);
+  const [selectedBucket, setSelectedBucket] = useState<number|null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const dark = theme === 'dark' || (theme === 'system' && systemDark);
@@ -224,7 +304,7 @@ export default function App() {
         if (repositoryId !== selectedRepositoryId) setSelectedRepositoryId(repositoryId);
         if (!repositoryId) {
           setLog([]); setFiles([]); setStatus({branch:'main',staged:[],untracked:[],modified:[]});
-          setBranches([]); setChanges([]); setBuckets([]); setSelected(''); setContent(''); setError('');
+          setBranches([]); setChanges([]); setBuckets([]); setObjectCount(0); setSelected(''); setContent(''); setSavedContent(''); setError('');
           return;
         }
         repositoryBase = `/api/repositories/${encodeURIComponent(repositoryId)}/workspace`;
@@ -235,10 +315,10 @@ export default function App() {
       const [nextLog, nextFiles, nextStatus, nextBranches, nextChanges, structures] = await Promise.all([
         getJSON<Commit[]>(`${repositoryBase}/log`, t), getJSON<Entry[]>(`${repositoryBase}/tree`, t), getJSON<Status>(`${repositoryBase}/status`, t),
         getJSON<string[]>(`${repositoryBase}/branches`, t), getJSON<Change[]>(`${repositoryBase}/diff`, t),
-        getJSON<{objectBuckets: number[]}>(`${repositoryBase}/structures`, t),
+        getJSON<StructureSnapshot>(`${repositoryBase}/structures`, t),
       ]);
       setLog(nextLog); setFiles(nextFiles); setStatus(nextStatus); setBranches(nextBranches);
-      setChanges(nextChanges); setBuckets(structures.objectBuckets); setError('');
+      setChanges(nextChanges); setBuckets(structures.objectBuckets); setObjectCount(structures.objectCount); setError('');
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     } finally { setLoading(false); }
@@ -339,6 +419,12 @@ export default function App() {
   }, [page, lang, t]);
 
   const selectedChange = useMemo(() => changes.find(change => change.path === selected), [changes, selected]);
+  const selectedIsImage = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(selected);
+  const fileHasUnsavedChanges = content !== savedContent;
+  const structureMetrics = useMemo(() => {
+    const occupied = buckets.filter(count => count > 0).length;
+    return {occupied, longestChain: buckets.reduce((longest, count) => Math.max(longest, count), 0), loadFactor: buckets.length ? objectCount / buckets.length : 0};
+  }, [buckets, objectCount]);
   const selectedUserRepository = useMemo(() => userRepositories.find(item => item.id === selectedRepositoryId) ?? null, [userRepositories, selectedRepositoryId]);
   const selectedRemoteUrl = selectedRepositoryId ? `${api || window.location.origin}/api/repositories/${encodeURIComponent(selectedRepositoryId)}` : '';
   useEffect(() => setRepositoryRemoteCopyState('idle'), [selectedRepositoryId]);
@@ -403,11 +489,52 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!selected || selectedChange || (!import.meta.env.DEV && !selectedRepositoryId)) { setContent(''); return; }
+    let cancelled = false;
+    setFileLoadError(''); setFileSaveError('');
+    if (!selected) { setContent(''); setSavedContent(''); setFileLoading(false); return; }
+    if (selectedIsImage) { setContent(''); setSavedContent(''); setFileLoading(false); return; }
+    if (selectedChange) {
+      const nextContent = selectedChange.status === 'deleted' ? '' : selectedChange.newText;
+      setContent(nextContent); setSavedContent(nextContent); setFileLoading(false); return;
+    }
+    if (!import.meta.env.DEV && !selectedRepositoryId) { setContent(''); setSavedContent(''); setFileLoading(false); return; }
     const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(selectedRepositoryId)}/workspace`;
+    setContent(''); setSavedContent(''); setFileLoading(true);
     void getJSON<{content: string}>(`${repositoryBase}/file?path=${encodeURIComponent(selected)}`, t)
-      .then(result => setContent(result.content)).catch(fetchError => setContent(String(fetchError)));
-  }, [selected, selectedChange, selectedRepositoryId, t]);
+      .then(result => { if (!cancelled) { setContent(result.content); setSavedContent(result.content); } })
+      .catch(fetchError => { if (!cancelled) setFileLoadError(fetchError instanceof Error ? fetchError.message : String(fetchError)); })
+      .finally(() => { if (!cancelled) setFileLoading(false); });
+    return () => { cancelled = true; };
+  }, [selected, selectedChange, selectedIsImage, selectedRepositoryId, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+    setImageUrl(''); setImageError('');
+    if (!selected || !selectedIsImage || (!import.meta.env.DEV && !selectedRepositoryId)) { setImageLoading(false); return; }
+    const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(selectedRepositoryId)}/workspace`;
+    setImageLoading(true);
+    void fetch(`${api}${repositoryBase}/file/raw?path=${encodeURIComponent(selected)}`, {credentials: 'include'})
+      .then(async response => {
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({error: response.statusText})) as {error?: string};
+          throw new Error(result.error ?? response.statusText);
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      })
+      .catch(cause => { if (!cancelled) setImageError(cause instanceof Error ? cause.message : String(cause)); })
+      .finally(() => { if (!cancelled) setImageLoading(false); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [selected, selectedIsImage, selectedRepositoryId]);
+
+  useEffect(() => {
+    setSelectedBucket(null); setSelected(''); setContent(''); setSavedContent('');
+  }, [selectedRepositoryId]);
 
   useEffect(() => {
     if (!aiTask || aiTask.state === 'ready' || aiTask.state === 'error') return;
@@ -439,6 +566,30 @@ export default function App() {
       await refresh();
     } catch (runError) { setOutput(history => [runError instanceof Error ? runError.message : String(runError), ...history]); }
     setTerminal('');
+  };
+
+  const saveFile = async () => {
+    if (!selected || selectedIsImage || !fileHasUnsavedChanges || fileSaving || repositoryAccessDisabled || workspaceHasNoRepository) return;
+    setFileSaving(true); setFileSaveError('');
+    try {
+      const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(selectedRepositoryId)}/workspace`;
+      await postJSON<{ok: boolean}>(`${repositoryBase}/file`, {path: selected, content}, t);
+      setSavedContent(content);
+      await refresh();
+    } catch (cause) {
+      setFileSaveError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setFileSaving(false); }
+  };
+
+  const selectWorkspaceFile = (filePath: string) => {
+    if (fileHasUnsavedChanges && !window.confirm(t('workspace.discardUnsavedConfirm'))) return;
+    setSelected(filePath); setShowMobileHistory(false);
+  };
+
+  const selectWorkspaceRepository = (repositoryId: string) => {
+    if (repositoryId === selectedRepositoryId) return;
+    if (fileHasUnsavedChanges && !window.confirm(t('workspace.discardUnsavedConfirm'))) return;
+    setSelectedRepositoryId(repositoryId);
   };
 
   const requestAI = async (kind: 'review' | 'commit-msg' | 'ask') => {
@@ -647,13 +798,14 @@ export default function App() {
   return <main className={`${dark ? 'app dark' : 'app'}${repositoryAccessDisabled?' workspace-access-disabled':''}${showRepositoryCreator?' has-repository-creator':''}`}>
     <header>
       <div className="brand"><span className="logo"><AIVerseMark/></span><div><b>{t('workspace.productName')}</b><small>{t('workspace.tagline')}</small></div></div>
-      <div className="header-right">{!import.meta.env.DEV&&user&&userRepositories.length>0&&<div className="workspace-repository-controls"><label className="workspace-repository-picker"><span>{t('workspace.repository')}</span><select value={selectedRepositoryId} onChange={event=>setSelectedRepositoryId(event.target.value)} aria-label={t('workspace.selectRepository')}>{userRepositories.map(item=><option key={item.id} value={item.id}>{item.name} · {item.isPublic?t('workspace.publicRepository'):t('workspace.privateRepository')}</option>)}</select></label><button type="button" className={`workspace-copy-remote${repositoryRemoteCopyState==='copied'?' is-copied':repositoryRemoteCopyState==='error'?' has-error':''}`} onClick={()=>void copySelectedRepositoryRemote()} disabled={!selectedRemoteUrl} aria-label={t('workspace.copyRemoteUrl')} title={t('workspace.copyRemoteUrl')}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H7"/></svg><span>{repositoryRemoteCopyState==='copied'?t('workspace.remoteUrlCopied'):repositoryRemoteCopyState==='error'?t('workspace.remoteUrlCopyFailed'):t('workspace.copyRemoteUrl')}</span></button><span className="sr-only" role="status" aria-live="polite">{repositoryRemoteCopyState==='copied'?t('workspace.remoteUrlCopied'):repositoryRemoteCopyState==='error'?t('workspace.remoteUrlCopyFailed'):''}</span></div>}{!import.meta.env.DEV&&user&&!repositoryAccessDisabled&&<button className="workspace-new-repository" onClick={()=>{setRepositoryCreateOpen(!repositoryCreateOpen);setRepositoryCreateError('')}}>{t('workspace.newRepository')}</button>}<span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
+      <div className="header-right">{!import.meta.env.DEV&&user&&userRepositories.length>0&&<div className="workspace-repository-controls"><label className="workspace-repository-picker"><span>{t('workspace.repository')}</span><select value={selectedRepositoryId} onChange={event=>selectWorkspaceRepository(event.target.value)} aria-label={t('workspace.selectRepository')}>{userRepositories.map(item=><option key={item.id} value={item.id}>{item.name} · {item.isPublic?t('workspace.publicRepository'):t('workspace.privateRepository')}</option>)}</select></label><button type="button" className={`workspace-copy-remote${repositoryRemoteCopyState==='copied'?' is-copied':repositoryRemoteCopyState==='error'?' has-error':''}`} onClick={()=>void copySelectedRepositoryRemote()} disabled={!selectedRemoteUrl} aria-label={t('workspace.copyRemoteUrl')} title={t('workspace.copyRemoteUrl')}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H7"/></svg><span>{repositoryRemoteCopyState==='copied'?t('workspace.remoteUrlCopied'):repositoryRemoteCopyState==='error'?t('workspace.remoteUrlCopyFailed'):t('workspace.copyRemoteUrl')}</span></button><span className="sr-only" role="status" aria-live="polite">{repositoryRemoteCopyState==='copied'?t('workspace.remoteUrlCopied'):repositoryRemoteCopyState==='error'?t('workspace.remoteUrlCopyFailed'):''}</span></div>}{!import.meta.env.DEV&&user&&!repositoryAccessDisabled&&<button className="workspace-new-repository" onClick={()=>{setRepositoryCreateOpen(!repositoryCreateOpen);setRepositoryCreateError('')}}>{t('workspace.newRepository')}</button>}<span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
     </header>
     {repositoryAccessDisabled?<div className="workspace-access-notice" role="status"><span className="workspace-access-icon" aria-hidden="true">i</span><div><b>{t('workspace.storageUnavailableTitle')}</b><p>{t('workspace.storageUnavailableBody')}</p></div></div>:error&&<div className="error-banner" role="alert"><span>{t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
     {showRepositoryCreator&&<section className="workspace-repository-creator"><div><p className="eyebrow">{userRepositories.length?t('workspace.repositorySettings'):t('workspace.firstRepository')}</p><h2>{userRepositories.length?t('workspace.newRepository'):t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p></div><form onSubmit={event=>void createRepository(event)}><label>{t('workspace.repositoryName')}<input value={repositoryCreateName} onChange={event=>setRepositoryCreateName(event.target.value)} minLength={1} maxLength={100} pattern="[A-Za-z0-9._\\-]{1,100}" placeholder={t('workspace.repositoryNamePlaceholder')} required/></label><label className="workspace-repository-visibility"><input type="checkbox" checked={repositoryCreatePublic} onChange={event=>setRepositoryCreatePublic(event.target.checked)}/><span>{t('workspace.makeRepositoryPublic')}</span></label>{repositoryCreateError&&<p className="form-error" role="alert">{repositoryCreateError}</p>}<div><button className="action" disabled={repositoryCreateLoading||!repositoryCreateName.trim()}>{repositoryCreateLoading?t('workspace.creatingRepository'):t('workspace.createRepository')}</button>{userRepositories.length>0&&<button type="button" className="secondary action" onClick={()=>setRepositoryCreateOpen(false)}>{t('common.cancel')}</button>}</div></form></section>}
     {loading && <div className="workspace-loading" role="status" aria-live="polite"><span className="loading-spinner" aria-hidden="true"/><span>{t('workspace.loading')}</span><div className="loading-track"><i/></div></div>}
-    <section className="workspace">
+    <section className={`workspace${showMobileHistory?' mobile-history-open':''}`}>
       <aside className="sidebar">
+        <button className="mobile-history-close" onClick={()=>setShowMobileHistory(false)}>{t('workspace.closeHistory')}<span>×</span></button>
         <div className="workspace-side-nav" aria-label={t('workspace.navigation')}>
           <button className="selected" onClick={()=>setPage('workspace')}><span>⌂</span> {t('workspace.summary')}</button>
           <button onClick={()=>setPage('feed')}><span>◉</span> {t('nav.community')}</button>
@@ -661,8 +813,14 @@ export default function App() {
           <button onClick={()=>setPage('prs')}><span>⑂</span> {t('prs.title')}</button>
         </div>
         <div className="workspace-sidebar-rule"/>
+        <section className="sidebar-history" aria-label={t('workspace.commitHistory')}>
+          <div className="side-title">{t('workspace.commitHistory')}<span>{formatNumber(log.length)}</span></div>
+          {log.length ? log.slice(0, 8).map((item, index)=><article className={index===0?'sidebar-commit latest':'sidebar-commit'} key={item.hash} title={item.commit.message}>
+            <span className="sidebar-commit-node" aria-hidden="true"/><div><b>{item.commit.message}</b><small><code>{item.hash.slice(0,8)}</code><i/>{formatDate(item.commit.date,{dateStyle:'medium'})}</small></div>
+          </article>) : loading ? <div className="sidebar-history-loading" aria-hidden="true"><i/><i/><i/></div> : <p className="sidebar-history-empty">{t('workspace.historyEmptyTitle')}</p>}
+        </section>
         <div className="side-title">{t('workspace.explorer')}{' '}<span>{formatNumber(allPaths.length)}</span></div>
-        {allPaths.map(file => { const change = changes.find(item => item.path === file); return <button className={selected === file ? 'file active' : 'file'} key={file} onClick={() => setSelected(file)}><span className={`dot ${change?.status ?? 'clean'}`}/>{file}</button>; })}
+        {allPaths.map(file => { const change = changes.find(item => item.path === file); return <button className={selected === file ? 'file active' : 'file'} key={file} onClick={() => selectWorkspaceFile(file)}><span className={`dot ${change?.status ?? 'clean'}`}/>{file}</button>; })}
         {!allPaths.length && <p className="muted">{loading ? t('common.loading') : t('workspace.addFiles')}</p>}
         <div className="side-title branch-heading">{t('workspace.branches')}{' '}<span>{formatNumber(branches.length)}</span></div>
         {branches.map(branch => <div className={branch === status.branch ? 'file current' : 'file'} key={branch}>◉ {branch}</div>)}
@@ -671,24 +829,16 @@ export default function App() {
         <div className="workspace-overview">
           <div className="workspace-greeting">
           <div><p className="workspace-kicker">{t('workspace.kicker')}</p><h1>{selectedUserRepository?.name ?? t('workspace.project')}</h1><p>{selectedUserRepository?.description || t('workspace.projectIntro')}</p></div>
-            <div className="workspace-quick-actions"><button className="mobile-ai-toggle" onClick={()=>setShowMobileAI(true)}>{t('workspace.openCopilot')}{' '}<span>✦</span></button><button onClick={()=>setPage('feed')}>{t('workspace.exploreCommunity')}{' '}<span>↗</span></button><button className="quick-primary" onClick={()=>setPage('docs')}>{t('workspace.openGuides')}{' '}<span>→</span></button></div>
+            <div className="workspace-quick-actions"><button className="mobile-history-toggle" onClick={()=>setShowMobileHistory(true)}>{t('workspace.commitHistory')}<span>{formatNumber(log.length)}</span></button><button className="mobile-ai-toggle" onClick={()=>setShowMobileAI(true)}>{t('workspace.openCopilot')}{' '}<span>✦</span></button><button onClick={()=>setPage('feed')}>{t('workspace.exploreCommunity')}{' '}<span>↗</span></button><button className="quick-primary" onClick={()=>setPage('docs')}>{t('workspace.openGuides')}{' '}<span>→</span></button></div>
           </div>
-          <div className="workspace-metrics">
-            <article><span className="metric-icon violet">⌘</span><div><b>{formatNumber(log.length)}</b><small>{t('workspace.commits')}</small></div></article>
-            <article><span className="metric-icon amber">✎</span><div><b>{formatNumber(changes.length)}</b><small>{t('workspace.pendingChanges')}</small></div></article>
-            <article><span className="metric-icon green">▤</span><div><b>{formatNumber(files.length)}</b><small>{t('workspace.trackedFiles')}</small></div></article>
-            <article className="workspace-branch-card"><span>{t('workspace.currentBranch')}</span><b>⑂ {status.branch}</b><small>{repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.syncPaused'):t('workspace.repositoryConnected')}</small></article>
+        </div>
+        <div className="editor workspace-editor">
+          <div className="editor-toolbar">
+            <div className="editor-file-title"><span className="editor-file-icon" aria-hidden="true">{selectedIsImage?'▧':'⌘'}</span><div><b>{selected || t('workspace.changesTree')}</b><small>{selectedChange ? selectedChange.status : selected ? t('workspace.confirmedContent') : t('workspace.selectFile')}</small></div></div>
+            <div className="editor-actions">{selected&&!selectedIsImage&&<span className={`editor-save-status${fileHasUnsavedChanges?' is-dirty':''}`}>{fileHasUnsavedChanges?t('workspace.unsavedChanges'):t('workspace.fileSaved')}</span>}{selected&&!selectedIsImage&&<button className="editor-save-button" onClick={()=>void saveFile()} disabled={!fileHasUnsavedChanges||fileSaving||repositoryAccessDisabled||workspaceHasNoRepository}>{fileSaving?t('workspace.savingFile'):t('workspace.saveFile')}</button>}</div>
           </div>
-          <div className="workspace-section-label"><div><span className="section-spark">✦</span><b>{t('workspace.activity')}</b><small> {t('workspace.activityHint')}</small></div><span className="activity-count">{t('workspace.historyCount', {count:formatNumber(log.length)})}</span></div>
+          {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><h2>{t('workspace.storageUnavailableTitle')}</h2><p>{t('workspace.storageUnavailableBody')}</p></div>:workspaceHasNoRepository?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌘</span><h2>{t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p><button className="action" onClick={()=>setRepositoryCreateOpen(true)}>{t('workspace.newRepository')}</button></div>:!selected?<div className="editor-empty"><span>⌘</span><p>{t('workspace.selectFile')}</p></div>:selectedIsImage?<div className="image-viewer">{imageLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('workspace.loadingImage')}</p></div>:imageError?<div className="editor-error" role="alert">{imageError}</div>:imageUrl?<><img src={imageUrl} alt={selected.split('/').pop()??selected}/><div className="image-viewer-caption"><span>{selected}</span><a href={imageUrl} download={selected.split('/').pop()??'image'}>{t('workspace.downloadImage')}</a></div></>:null}</div>:fileLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('common.loading')}</p></div>:fileLoadError?<div className="editor-error" role="alert">{fileLoadError}</div>:<><textarea className="code-editor" value={content} onChange={event=>setContent(event.target.value)} onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void saveFile()}}} aria-label={t('workspace.editFile')} spellCheck={false} wrap="off" />{fileSaveError&&<p className="editor-error" role="alert">{fileSaveError}</p>}</>}
         </div>
-        {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><p className="eyebrow">{t('workspace.storageUnavailable')}</p><h2>{t('workspace.storageUnavailableTitle')}</h2><p>{t('workspace.storageUnavailableBody')}</p></div>:workspaceHasNoRepository?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌘</span><p className="eyebrow">{t('workspace.firstRepository')}</p><h2>{t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p><button className="action" onClick={()=>setRepositoryCreateOpen(true)}>{t('workspace.newRepository')}</button></div>:<><div className="graph">
-          <div className="panel-head"><span>{t('workspace.commitHistory')}</span><small>{t('workspace.branch', {branch:status.branch})}</small></div>
-          {log.length ? <div className="commit-timeline">{log.slice(0, 5).map((item,index)=><article className={index===0?'commit-item latest':'commit-item'} key={item.hash}><span className="commit-node"/><div><div className="commit-item-title"><b>{item.commit.message}</b>{index===0&&<span>{t('workspace.latest')}</span>}</div><p><code>{item.hash.slice(0,8)}</code><i/>{formatDate(item.commit.date, {dateStyle:'medium',timeStyle:'short'})}</p></div></article>)}</div> : loading ? <div className="timeline-loading" aria-hidden="true"><i/><i/><i/></div> : <div className="timeline-empty"><span>✦</span><div><b>{t('workspace.historyEmptyTitle')}</b><p>{t('workspace.historyEmptyBody')}</p></div></div>}
-        </div>
-        <div className="editor">
-          <div className="panel-head"><span>{selected || t('workspace.changesTree')}</span><small>{selectedChange ? selectedChange.status : t('workspace.confirmedContent')}</small></div>
-          {selectedChange ? <div className="diff-grid"><DiffColumn title={t('workspace.before')} text={selectedChange.oldText}/><DiffColumn title={t('workspace.after')} text={selectedChange.newText}/></div> : <pre>{selected ? content : t('workspace.selectFile')}</pre>}
-        </div></>}
       </section>
       <aside className={showMobileAI ? 'right mobile-ai-open' : 'right'}>
         <button className="mobile-ai-close" onClick={()=>setShowMobileAI(false)}>{t('workspace.closeCopilot')}{' '}<span>×</span></button>
@@ -705,10 +855,16 @@ export default function App() {
         <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
         <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
         <div className={`task-state ${aiSubmitting ? 'processing' : aiTask?.state ?? ''}`} aria-live="polite">{aiSubmitting ? t('workspace.preparingAnswer') : aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
-        {(aiSubmitting||aiTask)&&<pre className="ai-result" aria-live="polite">{aiSubmitting ? t('workspace.preparingAnswer') : aiTask?.result ?? aiTask?.error ?? t('workspace.preparingAnswer')}</pre>}
+        {(aiSubmitting||aiTask)&&<div className="ai-result" aria-live="polite"><MarkdownMessage text={aiSubmitting ? t('workspace.preparingAnswer') : aiTask?.result ?? aiTask?.error ?? t('workspace.preparingAnswer')}/></div>}
         <div className="ai-provider-note"><span>✧</span> {t('workspace.model', {model:health?.provider ?? t('workspace.productName')})}</div>
-        <div className="inspector"><div className="panel-head">{t('workspace.inspector')}</div><small>{t('workspace.hashTable')}</small><div className="buckets">{buckets.slice(0, 32).map((count, index) => <div key={index} title={t('workspace.bucketTitle', {index:formatNumber(index),count:formatNumber(count)})} style={{height: Math.max(4, count * 12)}}/>)}</div><small>{t('workspace.buckets', {count:formatNumber(buckets.length)})} {t('workspace.trackedFilesCount', {count:formatNumber(files.length)})}</small></div>
-        <div className="panel-head state-heading">{t('workspace.status')}</div><div className="stats"><span>{formatNumber(status.staged.length)}<small>{t('workspace.staged')}</small></span><span>{formatNumber(status.modified.length)}<small>{t('workspace.modified')}</small></span><span>{formatNumber(status.untracked.length)}<small>{t('workspace.untracked')}</small></span></div>
+        <section className="inspector">
+          <div className="inspector-heading"><div className="panel-head">{t('workspace.inspector')}</div><small>{formatNumber(objectCount)}</small></div>
+          <p className="inspector-description">{t('workspace.hashTable')}</p>
+          <div className="inspector-metrics"><span><b>{formatNumber(objectCount)}</b><small>{t('workspace.inspectorObjectCount')}</small></span><span><b>{formatNumber(structureMetrics.occupied)}/{formatNumber(buckets.length)}</b><small>{t('workspace.inspectorOccupiedBuckets')}</small></span><span><b>{formatNumber(structureMetrics.longestChain)}</b><small>{t('workspace.inspectorLongestChain')}</small></span></div>
+          {buckets.length?<><p className="inspector-help">{t('workspace.inspectorHelp')}</p><div className="buckets" role="group" aria-label={t('workspace.inspectorHelp')}>
+            {buckets.slice(0,64).map((count,index)=><button type="button" className={`bucket-bar${count?' has-items':''}${selectedBucket===index?' selected':''}`} key={index} title={t('workspace.bucketTitle',{index:formatNumber(index),count:formatNumber(count)})} aria-label={t('workspace.bucketTitle',{index:formatNumber(index),count:formatNumber(count)})} aria-pressed={selectedBucket===index} onClick={()=>setSelectedBucket(index)} style={{height:`${Math.max(4,Math.round(count/Math.max(1,structureMetrics.longestChain)*42))}px`}}/>)}
+          </div><small className="inspector-footnote">{t('workspace.inspectorLoadFactor',{value:`${(structureMetrics.loadFactor*100).toFixed(1)}%`})} · {t('workspace.buckets',{count:formatNumber(buckets.length)})}</small>{selectedBucket!==null&&<div className="inspector-detail"><b>{t('workspace.bucketDetails',{index:formatNumber(selectedBucket)})}</b><span>{t('workspace.bucketObjectCount',{count:formatNumber(buckets[selectedBucket]??0)})}</span><span>{t('workspace.bucketCollisionCount',{count:formatNumber(Math.max(0,(buckets[selectedBucket]??0)-1))})}</span></div>}</>:<p className="inspector-empty">{t('workspace.inspectorEmpty')}</p>}
+        </section>
       </aside>
     </section>
     <section className="terminal"><div className="terminal-head"><span><i/> {t('workspace.terminal')}</span><small>{t('workspace.terminalTagline')}</small><button onClick={()=>setPage('docs')}>{t('workspace.commands')}</button></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>aiverse ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder={repositoryAccessDisabled?t('workspace.commandAccessDisabled'):workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.terminalPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><button onClick={() => void run()} disabled={repositoryAccessDisabled||workspaceHasNoRepository}>↵</button></div></div></section>
