@@ -2,7 +2,7 @@ import 'dotenv/config';
 import {createServer} from 'node:http';
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
-import {createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
+import {createHash, createHmac, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {watch} from 'node:fs';
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -13,8 +13,8 @@ import type {AITask, AITaskKind} from './ai.js';
 import {AITaskQueue, GeminiProvider, OpenAIProvider} from './ai.js';
 import {resolveRepository} from './repository-root.js';
 import {Repository} from '@aiverse/core';
-import {activities, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
-import {AuthError, createAccount, createSession, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
+import {activities, cliTokens, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
+import {AuthError, createAccount, createSession, currentCliUser, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
 import {createWorkspaceRepositoriesRouter} from './workspace-repositories.js';
 
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
@@ -90,12 +90,19 @@ app.post('/api/billing/webhook', express.raw({type: 'application/json'}), async 
     response.sendStatus(200);
   } catch (error) { next(error); }
 });
-app.use(express.json({limit: '2mb'}));
+const standardJsonParser = express.json({limit: '2mb'});
+const repositoryPushJsonParser = express.json({limit: '64mb'});
+const cliPushBodyLimiter = rateLimit({windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false});
+app.use('/api/repositories/:repositoryId/remote/push', cliPushBodyLimiter);
+app.use((request, response, next) => {
+  const parser = /^\/api\/repositories\/[^/]+\/remote\/push\/?$/.test(request.path) ? repositoryPushJsonParser : standardJsonParser;
+  parser(request, response, next);
+});
 app.use(cookieParser());
 app.use((request, response, next) => {
   const origin = request.headers.origin;
   if (origin && isAllowedWebOrigin(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Credentials', 'true'); response.setHeader('Vary', 'Origin'); }
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
+  response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-CSRF-Token');
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   next();
 });
@@ -173,6 +180,46 @@ app.post('/api/auth/logout', async (request, response, next) => {
 app.get('/api/auth/me', async (request, response, next) => {
   try { response.json({user: await currentUser(request)}); }
   catch (error) { next(error); }
+});
+app.get('/api/auth/cli-token', async (request, response, next) => {
+  try {
+    if (!cliTokens) { response.status(503).json({error: 'El almacenamiento de cuentas no está disponible.'}); return; }
+    const user = await currentUser(request);
+    if (!user) { response.status(401).json({error: 'Inicia sesión para administrar el acceso del CLI.'}); return; }
+    const stored = await cliTokens.findOne({userId: String(user.id)}, {projection: {createdAt: 1}});
+    response.json({enabled: Boolean(stored), createdAt: stored?.createdAt ?? null});
+  } catch (error) { next(error); }
+});
+app.post('/api/auth/cli-token', authLimiter, async (request, response, next) => {
+  try {
+    if (!requireCsrf(request, response)) return;
+    if (!cliTokens) { response.status(503).json({error: 'El almacenamiento de cuentas no está disponible.'}); return; }
+    const user = await currentUser(request);
+    if (!user) { response.status(401).json({error: 'Inicia sesión para crear un token del CLI.'}); return; }
+    const token = 'aiv_cli_' + randomBytes(32).toString('base64url');
+    const createdAt = new Date();
+    await cliTokens.replaceOne({userId: String(user.id)}, {
+      id: randomUUID(), userId: String(user.id), tokenHash: createHash('sha256').update(token).digest('hex'), createdAt,
+    }, {upsert: true});
+    response.json({token, createdAt});
+  } catch (error) { next(error); }
+});
+app.post('/api/auth/cli-token/revoke', async (request, response, next) => {
+  try {
+    if (!requireCsrf(request, response)) return;
+    if (!cliTokens) { response.status(503).json({error: 'El almacenamiento de cuentas no está disponible.'}); return; }
+    const user = await currentUser(request);
+    if (!user) { response.status(401).json({error: 'Inicia sesión para administrar el acceso del CLI.'}); return; }
+    await cliTokens.deleteOne({userId: String(user.id)});
+    response.sendStatus(204);
+  } catch (error) { next(error); }
+});
+app.get('/api/auth/cli/me', async (request, response, next) => {
+  try {
+    const user = await currentCliUser(request);
+    if (!user) { response.status(401).json({error: 'Token de CLI no válido o revocado.'}); return; }
+    response.json({user: {id: user.id, username: user.username}});
+  } catch (error) { next(error); }
 });
 
 app.get('/api/billing/status', (_request, response) => response.json({enabled: Boolean(process.env.MP_ACCESS_TOKEN && process.env.MP_WEBHOOK_SECRET && process.env.MP_PRICE_STARTER_COP && process.env.MP_PRICE_PLUS_COP && process.env.MP_PRICE_PRO_COP)}));

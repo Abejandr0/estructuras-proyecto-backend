@@ -6,6 +6,7 @@ export let database: Db | null = null;
 
 export let users: Collection<Document> | null = null;
 export let sessions: Collection<Document> | null = null;
+export let cliTokens: Collection<Document> | null = null;
 export let repositories: Collection<Document> | null = null;
 export let stars: Collection<Document> | null = null;
 export let pullRequests: Collection<Document> | null = null;
@@ -19,6 +20,7 @@ export async function initializeDatabase(): Promise<void> {
   const connectedDatabase = database;
   users = connectedDatabase.collection('users');
   sessions = connectedDatabase.collection('sessions');
+  cliTokens = connectedDatabase.collection('cli_tokens');
   repositories = connectedDatabase.collection('repositories');
   stars = connectedDatabase.collection('repository_stars');
   pullRequests = connectedDatabase.collection('pull_requests');
@@ -31,6 +33,8 @@ export async function initializeDatabase(): Promise<void> {
     sessions.createIndex({tokenHash: 1}, {unique: true}),
     sessions.createIndex({expiresAt: 1}, {expireAfterSeconds: 0}),
     sessions.createIndex({userId: 1}),
+    cliTokens.createIndex({userId: 1}, {unique: true}),
+    cliTokens.createIndex({tokenHash: 1}, {unique: true}),
     repositories.createIndex({id: 1}, {unique: true}),
     repositories.createIndex({ownerId: 1, name: 1}, {unique: true}),
     repositories.createIndex({isPublic: 1, starsCount: -1, createdAt: -1}),

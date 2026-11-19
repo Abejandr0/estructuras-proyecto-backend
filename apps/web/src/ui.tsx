@@ -112,7 +112,12 @@ export default function App() {
   const [registrationReady, setRegistrationReady] = useState(false);
   const [accountActionError, setAccountActionError] = useState('');
   const [accountActionLoading, setAccountActionLoading] = useState(false);
-  const [accountIdCopied, setAccountIdCopied] = useState(false);
+  const [cliTokenEnabled, setCliTokenEnabled] = useState(false);
+  const [cliTokenCreatedAt, setCliTokenCreatedAt] = useState('');
+  const [cliTokenValue, setCliTokenValue] = useState('');
+  const [cliTokenCopied, setCliTokenCopied] = useState(false);
+  const [cliTokenError, setCliTokenError] = useState('');
+  const [cliTokenLoading, setCliTokenLoading] = useState(false);
   const [passwordValue, setPasswordValue] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
@@ -140,6 +145,14 @@ export default function App() {
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
   const [feedSearch, setFeedSearch] = useState('');
   const [feedSort, setFeedSort] = useState<'popular'|'recent'>('popular');
+  const [publicRepository, setPublicRepository] = useState<typeof feed[number]|null>(null);
+  const [publicRepositoryFiles, setPublicRepositoryFiles] = useState<Entry[]>([]);
+  const [publicRepositoryLog, setPublicRepositoryLog] = useState<Commit[]>([]);
+  const [publicRepositoryPath, setPublicRepositoryPath] = useState('');
+  const [publicRepositoryContent, setPublicRepositoryContent] = useState('');
+  const [publicRepositoryLoading, setPublicRepositoryLoading] = useState(false);
+  const [publicRepositoryError, setPublicRepositoryError] = useState('');
+  const [cloneCommandCopied, setCloneCommandCopied] = useState('');
   const [communityPosts, setCommunityPosts] = useState<Array<{id:string;text:string;created_at:string;username:string;display_name:string}>>([]);
   const [postText, setPostText] = useState('');
   const [postError, setPostError] = useState('');
@@ -253,6 +266,13 @@ export default function App() {
   }, [refresh, loadFeed, loadPosts, lang]);
 
   useEffect(() => {
+    if (page !== 'account' || !user) return;
+    void getJSON<{enabled:boolean;createdAt?:string|null}>('/api/auth/cli-token', t)
+      .then(result => { setCliTokenEnabled(result.enabled); setCliTokenCreatedAt(result.createdAt ?? ''); setCliTokenError(''); })
+      .catch(cause => setCliTokenError(cause instanceof Error ? cause.message : String(cause)));
+  }, [page, user, t]);
+
+  useEffect(() => {
     if (!api || (!user && !import.meta.env.DEV)) return;
     let socket: WebSocket | undefined;
     let cancelled = false;
@@ -316,6 +336,7 @@ export default function App() {
 
   const selectedChange = useMemo(() => changes.find(change => change.path === selected), [changes, selected]);
   const selectedUserRepository = useMemo(() => userRepositories.find(item => item.id === selectedRepositoryId) ?? null, [userRepositories, selectedRepositoryId]);
+  const selectedRemoteUrl = selectedRepositoryId ? `${api || window.location.origin}/api/repositories/${encodeURIComponent(selectedRepositoryId)}` : '';
   const workspaceHasNoRepository = !import.meta.env.DEV && !repositoryAccessDisabled && !loading && userRepositories.length === 0;
   const allPaths = useMemo(() => [...new Set([...files.map(file => file.path), ...changes.map(change => change.path)])].sort(), [files, changes]);
   const filteredFeed = useMemo(() => feed
@@ -329,6 +350,40 @@ export default function App() {
       setCommunityPosts(posts => [result.post, ...posts]); setPostText('');
     } catch (cause) { setPostError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setPostSubmitting(false); }
+  };
+
+  const viewPublicRepository = async (item: typeof feed[number]) => {
+    setPublicRepository(item); setPublicRepositoryFiles([]); setPublicRepositoryLog([]);
+    setPublicRepositoryPath(''); setPublicRepositoryContent(''); setPublicRepositoryError(''); setPublicRepositoryLoading(true);
+    try {
+      const base = `/api/repositories/${encodeURIComponent(item.id)}/workspace`;
+      const [nextFiles, nextLog] = await Promise.all([
+        getJSON<Entry[]>(`${base}/tree`, t), getJSON<Commit[]>(`${base}/log`, t),
+      ]);
+      setPublicRepositoryFiles(nextFiles); setPublicRepositoryLog(nextLog);
+      if (nextFiles[0]) {
+        const result = await getJSON<{content:string}>(`${base}/file?path=${encodeURIComponent(nextFiles[0].path)}`, t);
+        setPublicRepositoryPath(nextFiles[0].path); setPublicRepositoryContent(result.content);
+      }
+    } catch (cause) { setPublicRepositoryError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setPublicRepositoryLoading(false); }
+  };
+
+  const viewPublicFile = async (filePath: string) => {
+    if (!publicRepository) return;
+    setPublicRepositoryPath(filePath); setPublicRepositoryContent(''); setPublicRepositoryError(''); setPublicRepositoryLoading(true);
+    try {
+      const result = await getJSON<{content:string}>(`/api/repositories/${encodeURIComponent(publicRepository.id)}/workspace/file?path=${encodeURIComponent(filePath)}`, t);
+      setPublicRepositoryContent(result.content);
+    } catch (cause) { setPublicRepositoryError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setPublicRepositoryLoading(false); }
+  };
+
+  const copyCloneCommand = async (item: typeof feed[number]) => {
+    const remote = `${api || window.location.origin}/api/repositories/${encodeURIComponent(item.id)}`;
+    const command = `aiverse clone ${remote} ./${item.name}`;
+    try { await navigator.clipboard.writeText(command); setCloneCommandCopied(item.id); }
+    catch { setFeedError(t('feed.cloneCopyError')); }
   };
 
   const startCheckout = async (plan: 'starter'|'plus'|'pro') => {
@@ -416,6 +471,7 @@ export default function App() {
     try {
       await postNoContent('/api/auth/logout', t);
       setUser(null);
+      setCliTokenValue(''); setCliTokenEnabled(false); setCliTokenCreatedAt('');
       setAuthChecked(true);
       setPage('home');
     } catch (cause) {
@@ -425,15 +481,30 @@ export default function App() {
     }
   };
 
-  const copyAccountId = async () => {
-    if (!user?.id) return;
+  const createCliToken = async () => {
+    if (cliTokenLoading) return;
+    setCliTokenLoading(true); setCliTokenError(''); setCliTokenValue(''); setCliTokenCopied(false);
     try {
-      await navigator.clipboard.writeText(user.id);
-      setAccountIdCopied(true);
-      setAccountActionError('');
-    } catch {
-      setAccountActionError(t('account.copyError'));
-    }
+      const result = await postJSON<{token:string;createdAt:string}>('/api/auth/cli-token', {}, t);
+      setCliTokenValue(result.token); setCliTokenCreatedAt(result.createdAt); setCliTokenEnabled(true);
+    } catch (cause) { setCliTokenError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setCliTokenLoading(false); }
+  };
+
+  const revokeCliToken = async () => {
+    if (cliTokenLoading) return;
+    setCliTokenLoading(true); setCliTokenError('');
+    try {
+      await postNoContent('/api/auth/cli-token/revoke', t);
+      setCliTokenEnabled(false); setCliTokenCreatedAt(''); setCliTokenValue(''); setCliTokenCopied(false);
+    } catch (cause) { setCliTokenError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setCliTokenLoading(false); }
+  };
+
+  const copyCliToken = async () => {
+    if (!cliTokenValue) return;
+    try { await navigator.clipboard.writeText(cliTokenValue); setCliTokenCopied(true); setCliTokenError(''); }
+    catch { setCliTokenError(t('account.cliTokenCopyError')); }
   };
 
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
@@ -486,9 +557,9 @@ export default function App() {
     <section className="explore-hero"><p className="eyebrow">{t('feed.eyebrow')}</p><h1>{t('feed.titleFirst')}<br/><span>{t('feed.titleSecond')}</span></h1><p>{t('feed.intro')}</p><div className="explore-search"><span>⌕</span><input value={feedSearch} onChange={event=>setFeedSearch(event.target.value)} placeholder={t('feed.searchPlaceholder')} aria-label={t('feed.searchLabel')}/><button onClick={()=>setFeedSearch('')} disabled={!feedSearch}>{t('common.clear')}</button></div><div className="explore-metrics" aria-live="polite"><span><b>{feedLoading?'…':formatNumber(feed.length)}</b> {t('feed.publicRepositories')}</span><span><b>{feedLoading?'…':formatNumber(new Set(feed.map(item=>item.username)).size)}</b> {t('feed.developers')}</span><span>{t('feed.updated')}</span></div></section>
     <section className="explore-content"><div className="community-layout"><div><div className="community-composer"><p className="eyebrow">{t('feed.shareEyebrow')}</p><h2>{t('feed.composerTitle')}</h2>{user?<form onSubmit={event=>void publishPost(event)}><textarea maxLength={1200} value={postText} onChange={event=>setPostText(event.target.value)} placeholder={t('feed.composerPlaceholder')}/><div><small>{formatNumber(postText.length)}/1.200</small><button className="action" disabled={postSubmitting||!postText.trim()}>{postSubmitting?t('feed.publishing'):t('feed.publish')}</button></div>{postError&&<p className="form-error" role="alert">{postError}</p>}</form>:<><p>{t('feed.loginToPost')}</p><button className="action" onClick={()=>setPage('login')}>{t('feed.loginAction')}</button></>}</div><div className="community-posts"><p className="eyebrow">{t('feed.recentEyebrow')}</p>{postsLoading?<div className="feed-skeleton" role="status" aria-label={t('feed.loadingPosts')}><i/><i/><i/></div>:postsError?<div className="feed-error" role="alert"><p>{t('feed.postsError', {error:postsError})}</p><button onClick={()=>void loadPosts()}>{t('common.retry')}</button></div>:communityPosts.length?communityPosts.map(post=><article className="community-post" key={post.id}><div className="post-avatar">{post.display_name?.[0]?.toUpperCase()||'A'}</div><div><strong>{post.display_name||post.username}</strong><small>@{post.username} · {formatDate(post.created_at, {dateStyle:'medium',timeStyle:'short'})}</small><p>{post.text}</p></div></article>):<div className="explore-empty"><h3>{t('feed.startConversation')}</h3><p>{t('feed.firstPostHint')}</p></div>}</div></div><div><div className="explore-heading"><div><p className="eyebrow">{t('feed.directory')}</p><h2>{t('feed.projectsTitle')}</h2><p>{t('feed.repositoriesHint')}</p></div><label className="sort-select">{t('feed.sort')}<select value={feedSort} onChange={event=>setFeedSort(event.target.value as 'popular'|'recent')}><option value="popular">{t('feed.popular')}</option><option value="recent">{t('feed.recent')}</option></select></label></div>
       <div className="explore-tags"><span>{t('feed.trySearch')}</span>{['api','web','ia','typescript','open source'].map(term=><button key={term} onClick={()=>setFeedSearch(term)}>{term}</button>)}</div>
-      {feedLoading?<div className="explore-loading" role="status"><span className="loading-spinner" aria-hidden="true"/><p>{t('feed.loadingProjects')}</p><div className="feed-skeleton"><i/><i/><i/></div></div>:feedError?<div className="feed-error" role="alert"><p>{t('feed.projectsError', {error:feedError})}</p><button onClick={()=>void loadFeed()}>{t('common.retry')}</button></div>:filteredFeed.length>0?<div className="repo-grid explore-repos">{filteredFeed.map(item=><article className="repo-card explore-repo" key={item.id}><div className="explore-repo-title"><span className="repo-mark">◈</span><div><small>{item.username}</small><b>{item.username}/{item.name}</b></div><span className="repo-public">{t('feed.public')}</span></div><p>{item.description||t('feed.sharedRepository')}</p><div className="repo-meta"><span>☆ {formatNumber(item.stars_count)} {t('feed.stars')}</span><span>{item.created_at?formatDate(item.created_at, {dateStyle:'medium'}):t('feed.projectLabel')}</span></div></article>)}</div>
+      {feedLoading?<div className="explore-loading" role="status"><span className="loading-spinner" aria-hidden="true"/><p>{t('feed.loadingProjects')}</p><div className="feed-skeleton"><i/><i/><i/></div></div>:feedError?<div className="feed-error" role="alert"><p>{t('feed.projectsError', {error:feedError})}</p><button onClick={()=>void loadFeed()}>{t('common.retry')}</button></div>:filteredFeed.length>0?<div className="repo-grid explore-repos">{filteredFeed.map(item=><article className="repo-card explore-repo" key={item.id}><div className="explore-repo-title"><span className="repo-mark">◈</span><div><small>{item.username}</small><b>{item.username}/{item.name}</b></div><span className="repo-public">{t('feed.public')}</span></div><p>{item.description||t('feed.sharedRepository')}</p><div className="repo-meta"><span>☆ {formatNumber(item.stars_count)} {t('feed.stars')}</span><span>{item.created_at?formatDate(item.created_at, {dateStyle:'medium'}):t('feed.projectLabel')}</span></div><div className="repo-card-actions"><button onClick={()=>publicRepository?.id===item.id?setPublicRepository(null):void viewPublicRepository(item)}>{publicRepository?.id===item.id?t('feed.closeRepository'):t('feed.viewRepository')}</button><button onClick={()=>void copyCloneCommand(item)}>{cloneCommandCopied===item.id?t('feed.cloneCopied'):t('feed.copyCloneCommand')}</button></div></article>)}</div>
       :<div className="explore-empty"><span>⌕</span><h3>{feed.length?t('feed.noResults'):t('feed.communityStarting')}</h3><p>{feed.length?t('feed.tryAnotherSearch'):t('feed.emptyHint')}</p>{feedSearch?<button className="secondary action" onClick={()=>setFeedSearch('')}>{t('feed.clearSearch')}</button>:<button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('feed.createFirst')}</button>}</div>}
-    </div></div></section><section className="explore-invite"><div><p className="eyebrow">{t('feed.inviteEyebrow')}</p><h2>{t('feed.inviteTitle')}</h2><p>{t('feed.inviteBody')}</p></div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('feed.startBuilding')}{' '}<span>→</span></button></section>
+    </div></div>{publicRepository&&<section className="public-repository-viewer"><header><div><p className="eyebrow">{t('feed.publicReadOnly')}</p><h2>{publicRepository.username}/{publicRepository.name}</h2><p>{publicRepository.description}</p></div><button className="secondary action" onClick={()=>setPublicRepository(null)}>{t('feed.closeRepository')}</button></header><div className="public-repository-columns"><aside><h3>{t('feed.files')}</h3>{publicRepositoryLoading&&!publicRepositoryFiles.length?<p>{t('feed.loadingFiles')}</p>:publicRepositoryFiles.length?publicRepositoryFiles.map(file=><button className={publicRepositoryPath===file.path?'active':''} key={file.path} onClick={()=>void viewPublicFile(file.path)}>{file.path}</button>):<p>{t('feed.noFiles')}</p>}</aside><div className="public-repository-file"><div className="public-repository-file-head"><b>{publicRepositoryPath||t('feed.selectFile')}</b><span>{publicRepositoryLoading?t('feed.loadingFiles'):''}</span></div>{publicRepositoryError?<p className="form-error" role="alert">{publicRepositoryError}</p>:publicRepositoryPath?<pre>{publicRepositoryContent}</pre>:<p>{t('feed.selectFile')}</p>}</div></div><div className="public-repository-history"><h3>{t('feed.commitHistory')}</h3>{publicRepositoryLog.length?publicRepositoryLog.slice(0,8).map(item=><p key={item.hash}><code>{item.hash.slice(0,8)}</code> {item.commit.message}<small>{formatDate(item.commit.date,{dateStyle:'medium',timeStyle:'short'})}</small></p>):<p>{t('feed.noFiles')}</p>}</div><div className="public-repository-clone"><span>{t('feed.publicReadOnly')}</span><button className="action" onClick={()=>void copyCloneCommand(publicRepository)}>{cloneCommandCopied===publicRepository.id?t('feed.cloneCopied'):t('feed.copyCloneCommand')}</button></div></section>}</section><section className="explore-invite"><div><p className="eyebrow">{t('feed.inviteEyebrow')}</p><h2>{t('feed.inviteTitle')}</h2><p>{t('feed.inviteBody')}</p></div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('feed.startBuilding')}{' '}<span>→</span></button></section>
     <SiteFooter navigate={setPage}/>
   </main>;
 
@@ -529,15 +600,15 @@ export default function App() {
           <div className="account-profile-top"><span className="avatar">{user?.display_name?.[0]?.toUpperCase()??'A'}</span><div><span className="account-status"><i/>{t('account.active')}</span><h2>{user?.display_name??t('account.title')}</h2><p>@{user?.username}</p></div></div>
           <div className="account-section-heading"><div><h3>{t('account.profileDetails')}</h3><p>{t('account.profileDetailsHint')}</p></div></div>
           <dl className="account-details"><div><dt>{t('account.displayName')}</dt><dd>{user?.display_name??'—'}</dd></div><div><dt>{t('account.username')}</dt><dd>@{user?.username??'—'}</dd></div><div><dt>{t('account.email')}</dt><dd>{user?.email??'—'}</dd></div></dl>
-          <div className="account-id-row"><div><span>{t('account.accountId')}</span><code>{user?.id??'—'}</code></div><button type="button" className="account-copy-button" onClick={()=>void copyAccountId()} disabled={!user?.id}>{accountIdCopied?t('account.copiedId'):t('account.copyId')}</button></div>
         </section>
         <div className="account-side-grid">
           <section className="account-card account-plan-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.planAndUsage')}</p><h2>{accountPlanName}</h2></div><span className="account-status"><i/>{t('account.active')}</span></div><p>{accountPlan==='free'?t('account.freeDescription'):t('account.paidPlanDescription')}</p><div className="account-usage-heading"><span>{t('account.repositoryUsage')}</span><b>{accountRepositoryLimit===null?t('account.repositoryUnlimited',{used:formatNumber(accountRepositoryCount)}):t('account.repositoryOfLimit',{used:formatNumber(accountRepositoryCount),limit:formatNumber(accountRepositoryLimit)})}</b></div>{accountRepositoryLimit!==null&&<progress className="account-usage-progress" max={accountRepositoryLimit} value={Math.min(accountRepositoryCount,accountRepositoryLimit)} aria-label={t('account.repositoryUsage')}/>}<button className="action" onClick={()=>setPage('pricing')}>{t('account.seePlans')}</button></section>
           <section className="account-card account-preferences-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.preferences')}</p><h2>{t('account.preferencesTitle')}</h2></div><span className="account-card-icon" aria-hidden="true">◉</span></div><dl className="account-preference-list"><div><dt>{t('account.interfaceLanguage')}</dt><dd>{lang==='es'?t('language.spanish'):t('language.english')}</dd></div><div><dt>{t('account.appearance')}</dt><dd>{currentThemeLabel}</dd></div></dl><button className="secondary action" onClick={()=>setPage('settings')}>{t('account.editPreferences')}</button></section>
+          <section className="account-card account-cli-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.cliAccess')}</p><h2>{t('account.cliAccessTitle')}</h2></div><span className="account-card-icon" aria-hidden="true">⌘</span></div><p>{t('account.cliAccessBody')}</p><div className="account-cli-status"><i className={cliTokenEnabled?'is-active':''}/><span>{cliTokenEnabled?t('account.cliTokenActive'):t('account.cliTokenInactive')}{cliTokenEnabled&&cliTokenCreatedAt?` · ${t('account.cliTokenCreated',{date:formatDate(cliTokenCreatedAt,{dateStyle:'medium'})})}`:''}</span></div><div className="account-cli-token-actions"><button className="action" onClick={()=>void createCliToken()} disabled={cliTokenLoading}>{cliTokenLoading?t('account.cliTokenLoading'):cliTokenEnabled?t('account.rotateCliToken'):t('account.generateCliToken')}</button>{cliTokenEnabled&&<button className="secondary action" onClick={()=>void revokeCliToken()} disabled={cliTokenLoading}>{t('account.revokeCliToken')}</button>}</div>{cliTokenValue&&<div className="account-cli-token-reveal" role="status"><code>{cliTokenValue}</code><button className="secondary action" onClick={()=>void copyCliToken()}>{cliTokenCopied?t('account.cliTokenCopied'):t('account.cliTokenCopy')}</button><small>{t('account.cliTokenOneTime')}</small></div>}{cliTokenError&&<p className="form-error" role="alert">{cliTokenError}</p>}<p className="account-cli-security">{t('account.cliTokenSecurity')}</p><div className="account-cli-setup"><h3>{t('account.cliSetupTitle')}</h3><p>{t('account.cliSetupHint')}</p>{userRepositories.length?<><label>{t('account.chooseRepositoryForCli')}<select value={selectedRepositoryId} onChange={event=>setSelectedRepositoryId(event.target.value)}>{userRepositories.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><pre className="account-cli-commands"><code>{`aiverse init  # only if this folder is not initialized yet\naiverse add .\naiverse commit -m "Import project"\naiverse remote add origin ${selectedRemoteUrl}\naiverse auth login ${api||window.location.origin}\naiverse push main`}</code></pre></>:<p>{t('account.cliNoRepository')}</p>}</div></section>
           <section className="account-card account-security-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.security')}</p><h2>{t('account.activeSession')}</h2></div><span className="account-card-icon" aria-hidden="true">⌑</span></div><p>{t('account.sessionDescription')}</p><button className="secondary action account-signout" onClick={()=>void signOut()} disabled={accountActionLoading}>{accountActionLoading?t('account.signingOut'):t('account.signOut')}</button></section>
         </div>
       </div>
-      {accountIdCopied&&<p className="account-feedback" role="status">{t('account.copiedId')}</p>}{accountActionError&&<p className="form-error account-feedback" role="alert">{accountActionError}</p>}
+      {accountActionError&&<p className="form-error account-feedback" role="alert">{accountActionError}</p>}
     </section>
     :page==='docs'?<DocumentationPage navigate={setPage}/>
     :page==='prs'?<section className="product-page"><p className="eyebrow">{t('prs.eyebrow')}</p><h1>{t('prs.title')}</h1><p>{t('prs.intro')}</p><div className="feature-row"><article><b>{t('prs.contextReview')}</b><p>{t('prs.contextReviewBody')}</p></article><article><b>{t('prs.decisions')}</b><p>{t('prs.decisionsBody')}</p></article><article><b>{t('prs.aiHelp')}</b><p>{t('prs.aiHelpBody')}</p></article></div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('prs.start')}</button></section>
@@ -902,7 +973,7 @@ function DocumentationPage({navigate}: {navigate: (page: RoutePage)=>void}) {
   return <article className="docs-page"><aside className="docs-index"><p className="eyebrow">{t('docs.indexEyebrow')}</p><a href="#quickstart">{t('docs.quickstartNav')}</a><a href="#repositories">{t('docs.repositoriesNav')}</a><a href="#terminal-guide">{t('docs.terminalNav')}</a><a href="#ai-guide">{t('docs.aiNav')}</a><a href="#reviews">{t('docs.reviewsNav')}</a><a href="#privacy-guide">{t('docs.privacyNav')}</a><a href="#troubleshooting">{t('docs.troubleshootingNav')}</a></aside><div className="docs-content"><p className="eyebrow">{t('docs.eyebrow')}</p><h1>{t('docs.title')}</h1><p className="docs-lead">{t('docs.lead')}</p><div className="docs-callout"><b>{t('docs.startHere')}</b><p>{t('docs.startHereBody')}</p><button className="action" onClick={()=>navigate('workspace')}>{t('docs.openWorkspace')}</button></div>
     <section id="quickstart"><h2>{t('docs.quickstartTitle')}</h2><p>{t('docs.quickstartBody')}</p><ol><li>{t('docs.quickstart1')}</li><li>{t('docs.quickstart2')}</li><li>{t('docs.quickstart3')}</li><li>{t('docs.quickstart4')}</li><li>{t('docs.quickstart5')}</li></ol><pre><code>aiverse status<br/>aiverse add .<br/>aiverse commit -m "Agrega página de inicio"</code></pre></section>
     <section id="repositories"><h2>{t('docs.repositoriesTitle')}</h2><p>{t('docs.repositoriesBody')}</p><ul><li><b>{t('docs.publicLabel')}</b> {t('docs.publicBody')}</li><li><b>{t('docs.privateLabel')}</b> {t('docs.privateBody')}</li><li><b>{t('docs.descriptionLabel')}</b> {t('docs.descriptionBody')}</li><li><b>{t('docs.commitsLabel')}</b> {t('docs.commitsBody')}</li></ul><p>{t('docs.secretsWarning')}</p></section>
-    <section id="terminal-guide"><h2>{t('docs.terminalTitle')}</h2><p>{t('docs.terminalBody')}</p><pre><code>aiverse init<br/>aiverse status<br/>aiverse add src/<br/>aiverse commit -m "Explica el cambio"<br/>aiverse log<br/>aiverse push https://tu-servidor</code></pre><p>{t('docs.cloneIntro')}</p><pre><code>aiverse clone https://tu-servidor ./mi-proyecto<br/>cd mi-proyecto<br/>aiverse status</code></pre><p>{t('docs.terminalTips')}</p></section>
+    <section id="terminal-guide"><h2>{t('docs.terminalTitle')}</h2><p>{t('docs.terminalBody')}</p><p>{t('docs.cliInstallHint')}</p><pre><code>npm install<br/>npm run build<br/>npm link --workspace @aiverse/cli</code></pre><pre><code>aiverse init<br/>aiverse add .<br/>aiverse commit -m "Importa el proyecto"<br/>aiverse remote add origin https://aiverse.example/api/repositories/ID<br/>aiverse auth login https://aiverse.example<br/>aiverse push main</code></pre><p>{t('docs.cloneIntro')}</p><pre><code>aiverse clone https://aiverse.example/api/repositories/ID ./mi-proyecto<br/>cd mi-proyecto<br/>aiverse status</code></pre><p>{t('docs.terminalTips')}</p></section>
     <section id="ai-guide"><h2>{t('docs.aiTitle')}</h2><p>{t('docs.aiIntro')}</p><ul><li><b>{t('docs.reviewChangesLabel')}</b> {t('docs.reviewChangesBody')}</li><li><b>{t('docs.explainCodeLabel')}</b> {t('docs.explainCodeBody')}</li><li><b>{t('docs.learnLabel')}</b> {t('docs.learnBody')}</li><li><b>{t('docs.commitsImproveLabel')}</b> {t('docs.commitsImproveBody')}</li><li><b>{t('docs.conflictsLabel')}</b> {t('docs.conflictsBody')}</li></ul><p>{t('docs.promptTips')}</p><div className="docs-callout"><b>{t('docs.protectTitle')}</b><p>{t('docs.protectBody')}</p></div></section>
     <section id="reviews"><h2>{t('docs.reviewsTitle')}</h2><p>{t('docs.reviewsIntro')}</p><ol><li>{t('docs.reviews1')}</li><li>{t('docs.reviews2')}</li><li>{t('docs.reviews3')}</li><li>{t('docs.reviews4')}</li><li>{t('docs.reviews5')}</li></ol><p>{t('docs.reviewsClosing')}</p></section>
     <section id="privacy-guide"><h2>{t('docs.privacyTitle')}</h2><ul><li>{t('docs.privacy1')}</li><li>{t('docs.privacy2')}</li><li>{t('docs.privacy3')}</li><li>{t('docs.privacy4')}</li><li>{t('docs.privacy5')}</li><li>{t('docs.privacy6')}</li></ul></section>

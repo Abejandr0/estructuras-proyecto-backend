@@ -1,7 +1,7 @@
 import {createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
 import type {Request, Response} from 'express';
-import {sessions, users} from './database.js';
+import {cliTokens, sessions, users} from './database.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'aiverse_session';
@@ -97,6 +97,19 @@ export async function currentUser(request: Request): Promise<Record<string, unkn
   const session = await sessions.findOne({tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: {$gt: new Date()}});
   if (!session) return null;
   const user = await users.findOne({id: session.userId});
+  return user ? publicUser(user) : null;
+}
+
+export async function currentCliUser(request: Request): Promise<Record<string, unknown> | null> {
+  if (!cliTokens || !users) return null;
+  const authorization = request.get('authorization') ?? '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!token.startsWith('aiv_cli_') || token.length > 160) return null;
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const stored = await cliTokens.findOne({tokenHash});
+  if (!stored || typeof stored.userId !== 'string') return null;
+  await cliTokens.updateOne({tokenHash}, {$set: {lastUsedAt: new Date()}});
+  const user = await users.findOne({id: stored.userId});
   return user ? publicUser(user) : null;
 }
 

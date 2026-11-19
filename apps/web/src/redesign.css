@@ -1172,3 +1172,56 @@ button { transition: background-color 150ms ease, border-color 150ms ease, color
   .workspace-repository-creator form { grid-template-columns: 1fr; }
   .workspace-repository-visibility { min-height: auto; }
 }
+
+/* Safe local CLI publishing and public read-only repository browsing */
+.account-cli-card { grid-column: 1 / -1; }
+.account-cli-card .account-card-heading { margin-bottom: 8px; }
+.account-cli-status { display: flex; align-items: center; gap: 8px; margin: 14px 0; color: var(--text-muted); font-size: 13px; }
+.account-cli-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.account-cli-status i.is-active { background: #2d9b69; box-shadow: 0 0 0 3px color-mix(in srgb, #2d9b69 15%, transparent); }
+.account-cli-token-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-cli-token-actions .action { margin-top: 0; }
+.account-cli-token-reveal { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid var(--border); background: var(--bg-soft); }
+.account-cli-token-reveal code { overflow-wrap: anywhere; color: var(--text); font: 12px/1.5 'DM Mono', monospace; }
+.account-cli-token-reveal .action { margin: 0; }
+.account-cli-token-reveal small { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; }
+.account-cli-card .account-cli-security { margin: 10px 0 20px; font-size: 12px; }
+.account-cli-setup { padding-top: 16px; border-top: 1px solid var(--border); }
+.account-cli-setup h3 { margin: 0; color: var(--text); font-size: 16px; }
+.account-cli-setup > p { margin: 6px 0 13px; }
+.account-cli-setup label { display: grid; gap: 7px; max-width: 450px; color: var(--text-muted); font-size: 12px; }
+.account-cli-setup select { min-height: 40px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--surface); color: var(--text); font: 13px Manrope, sans-serif; }
+.account-cli-commands { max-width: 100%; margin: 12px 0 0; padding: 14px; overflow-x: auto; border: 1px solid var(--border); background: var(--bg-soft); color: var(--text); font: 12px/1.8 'DM Mono', monospace; white-space: pre; }
+.public-repository-viewer { margin-top: 22px; padding: clamp(16px, 2vw, 24px); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.public-repository-viewer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 0 0 15px; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); }
+.public-repository-viewer > header .eyebrow { margin: 0 0 6px; }
+.public-repository-viewer > header h2 { margin: 0; font-size: 22px; }
+.public-repository-viewer > header p:last-child { margin: 6px 0 0; color: var(--text-muted); font-size: 13px; }
+.public-repository-viewer > header .action { width: auto; margin: 0; }
+.public-repository-columns { display: grid; grid-template-columns: minmax(180px, 250px) minmax(0, 1fr); min-height: 230px; border-bottom: 1px solid var(--border); }
+.public-repository-columns > aside { display: flex; flex-direction: column; gap: 5px; padding: 14px; border-right: 1px solid var(--border); }
+.public-repository-columns h3,.public-repository-history h3 { margin: 0 0 8px; font-size: 13px; }
+.public-repository-columns > aside button { padding: 7px 8px; overflow: hidden; border: 0; background: transparent; color: var(--text-muted); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.public-repository-columns > aside button:hover,.public-repository-columns > aside button.active { background: var(--bg-soft); color: var(--brand); }
+.public-repository-file { min-width: 0; }
+.public-repository-file-head { display: flex; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.public-repository-file-head span { color: var(--text-muted); }
+.public-repository-file pre { max-height: 440px; margin: 0; padding: 15px; overflow: auto; color: var(--text); font: 12px/1.6 'DM Mono', monospace; white-space: pre; }
+.public-repository-file > p { padding: 14px; color: var(--text-muted); }
+.public-repository-history { padding: 15px 0; border-bottom: 1px solid var(--border); }
+.public-repository-history > p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 6px 0; color: var(--text-muted); font-size: 12px; }
+.public-repository-history code { color: var(--brand); font-family: 'DM Mono', monospace; }
+.public-repository-history small { margin-left: auto; }
+.public-repository-clone { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 13px; color: var(--text-muted); font-size: 12px; }
+.public-repository-clone .action { width: auto; margin: 0; }
+.repo-card-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.repo-card-actions button { min-height: 34px; padding: 0 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: 600 11px Manrope, sans-serif; cursor: pointer; }
+.repo-card-actions button:hover { border-color: var(--brand); color: var(--brand); }
+@media (max-width: 720px) {
+  .account-cli-token-reveal { grid-template-columns: 1fr; }
+  .account-cli-token-reveal small { grid-column: auto; }
+  .public-repository-viewer > header { flex-direction: column; }
+  .public-repository-columns { grid-template-columns: 1fr; }
+  .public-repository-columns > aside { max-height: 180px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .public-repository-clone { align-items: flex-start; flex-direction: column; }
+}
