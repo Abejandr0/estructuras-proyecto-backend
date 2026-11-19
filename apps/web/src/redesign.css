@@ -1141,3 +1141,34 @@ button { transition: background-color 150ms ease, border-color 150ms ease, color
   .workspace-access-action { margin-left: 39px; }
   .workspace-access-disabled .center { grid-template-rows: auto minmax(0, 1fr); }
 }
+
+/* Account-owned repository selection and creation */
+.workspace-repository-picker { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--text-muted); font-size: 11px; }
+.workspace-repository-picker select { width: auto; max-width: 210px; min-height: 36px; margin: 0; padding: 0 9px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--text); font: 600 12px Manrope, sans-serif; }
+.workspace-new-repository { min-height: 36px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--surface); color: var(--text); font: 600 12px Manrope, sans-serif; cursor: pointer; }
+.workspace-new-repository:hover { border-color: var(--brand); color: var(--brand); }
+.workspace-repository-creator { display: grid; grid-template-columns: minmax(0, .85fr) minmax(320px, 1.15fr); align-items: center; gap: 24px; margin: 12px 20px 0; padding: 20px 22px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.workspace-repository-creator .eyebrow { margin: 0 0 7px; }
+.workspace-repository-creator h2 { margin: 0; color: var(--text); font-size: clamp(20px, 2.5vw, 28px); letter-spacing: -.04em; }
+.workspace-repository-creator p:not(.eyebrow) { max-width: 460px; margin: 8px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.workspace-repository-creator form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 11px 14px; }
+.workspace-repository-creator form > label:first-child { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.workspace-repository-creator input:not([type="checkbox"]) { min-height: 40px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--bg); color: var(--text); font: 14px Manrope, sans-serif; }
+.workspace-repository-visibility { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; color: var(--text-muted); font-size: 12px; }
+.workspace-repository-visibility input { accent-color: var(--brand); }
+.workspace-repository-creator form > div { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.workspace-repository-creator form .action { width: auto; min-height: 39px; margin: 0; padding: 0 13px; }
+.workspace-repository-creator form .secondary.action { border: 1px solid var(--border-strong); background: transparent; color: var(--text); }
+.workspace-repository-creator .form-error { grid-column: 1 / -1; margin: 0; }
+.workspace-disabled-state .action { width: auto; }
+@media (max-width: 980px) {
+  .workspace-repository-picker > span { display: none; }
+  .workspace-repository-picker select { max-width: 150px; }
+}
+@media (max-width: 720px) {
+  .workspace-repository-picker select { max-width: 125px; }
+  .workspace-new-repository { padding-inline: 8px; font-size: 11px; }
+  .workspace-repository-creator { grid-template-columns: 1fr; gap: 16px; margin: 10px 9px 0; padding: 16px; }
+  .workspace-repository-creator form { grid-template-columns: 1fr; }
+  .workspace-repository-visibility { min-height: auto; }
+}

@@ -8,8 +8,9 @@ type Entry = {path: string; hash: string};
 type Status = {branch: string; staged: Entry[]; untracked: string[]; modified: string[]};
 type Change = {path: string; status: 'modified' | 'deleted' | 'untracked'; oldText: string; newText: string; lines: string[]};
 type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'ready' | 'error'; result?: string; error?: string; attempts: number};
-type Health = {ok: boolean; root?: string; provider: string; sharedRepositoryApiEnabled: boolean};
+type Health = {ok: boolean; root?: string; provider: string; sharedRepositoryApiEnabled: boolean; userRepositoriesEnabled?: boolean};
 type AccountUser = {id: string; username: string; display_name: string; email: string; plan?: string; repositoryCount?: number};
+type UserRepository = {id: string; name: string; description: string; isPublic: boolean; stars_count: number; created_at?: string};
 
 const api = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:4179' : '')).replace(/\/$/, '');
 const eventsUrl = new URL('/api/events', api || window.location.origin);
@@ -117,6 +118,13 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [log, setLog] = useState<Commit[]>([]);
   const [files, setFiles] = useState<Entry[]>([]);
+  const [userRepositories, setUserRepositories] = useState<UserRepository[]>([]);
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState('');
+  const [repositoryCreateOpen, setRepositoryCreateOpen] = useState(false);
+  const [repositoryCreateName, setRepositoryCreateName] = useState('');
+  const [repositoryCreatePublic, setRepositoryCreatePublic] = useState(false);
+  const [repositoryCreateError, setRepositoryCreateError] = useState('');
+  const [repositoryCreateLoading, setRepositoryCreateLoading] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [changes, setChanges] = useState<Change[]>([]);
   const [status, setStatus] = useState<Status>({branch: 'main', staged: [], untracked: [], modified: []});
@@ -141,7 +149,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const dark = theme === 'dark' || (theme === 'system' && systemDark);
-  const repositoryAccessDisabled = health?.sharedRepositoryApiEnabled === false;
+  const repositoryAccessDisabled = !import.meta.env.DEV && health !== null && !health.userRepositoriesEnabled;
   const setPage = (nextPage: RoutePage) => {
     const destination = nextPage === 'settings' && !user ? 'login' : nextPage;
     window.history.pushState({page: destination}, '', pageRoutes[destination]);
@@ -186,21 +194,38 @@ export default function App() {
     try {
       const nextHealth = await getJSON<Health>('/api/health', t);
       setHealth(nextHealth);
-      if (!nextHealth.sharedRepositoryApiEnabled) {
+      let repositoryBase = '/api/repo';
+      if (!import.meta.env.DEV) {
+        if (!nextHealth.userRepositoriesEnabled) {
+          setError(t('workspace.repositoryStorageUnavailable'));
+          return;
+        }
+        if (!user) { setUserRepositories([]); setError(''); return; }
+        const result = await getJSON<{repositories: UserRepository[]}>('/api/repositories', t);
+        setUserRepositories(result.repositories);
+        const repositoryId = result.repositories.find(item => item.id === selectedRepositoryId)?.id ?? result.repositories[0]?.id ?? '';
+        if (repositoryId !== selectedRepositoryId) setSelectedRepositoryId(repositoryId);
+        if (!repositoryId) {
+          setLog([]); setFiles([]); setStatus({branch:'main',staged:[],untracked:[],modified:[]});
+          setBranches([]); setChanges([]); setBuckets([]); setSelected(''); setContent(''); setError('');
+          return;
+        }
+        repositoryBase = `/api/repositories/${encodeURIComponent(repositoryId)}/workspace`;
+      } else if (!nextHealth.sharedRepositoryApiEnabled) {
         setError(t('error.publicRepository'));
         return;
       }
       const [nextLog, nextFiles, nextStatus, nextBranches, nextChanges, structures] = await Promise.all([
-        getJSON<Commit[]>('/api/repo/log', t), getJSON<Entry[]>('/api/repo/tree', t), getJSON<Status>('/api/repo/status', t),
-        getJSON<string[]>('/api/repo/branches', t), getJSON<Change[]>('/api/repo/diff', t),
-        getJSON<{objectBuckets: number[]}>('/api/structures', t),
+        getJSON<Commit[]>(`${repositoryBase}/log`, t), getJSON<Entry[]>(`${repositoryBase}/tree`, t), getJSON<Status>(`${repositoryBase}/status`, t),
+        getJSON<string[]>(`${repositoryBase}/branches`, t), getJSON<Change[]>(`${repositoryBase}/diff`, t),
+        getJSON<{objectBuckets: number[]}>(`${repositoryBase}/structures`, t),
       ]);
       setLog(nextLog); setFiles(nextFiles); setStatus(nextStatus); setBranches(nextBranches);
       setChanges(nextChanges); setBuckets(structures.objectBuckets); setError('');
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     } finally { setLoading(false); }
-  }, []);
+  }, [user, selectedRepositoryId, t]);
 
   const loadFeed = useCallback(async () => {
     setFeedLoading(true);
@@ -244,7 +269,7 @@ export default function App() {
   }, [user, refresh]);
 
   useEffect(() => {
-    if (authChecked && (page === 'settings' || page === 'account') && !user) setPage('login');
+    if (authChecked && (page === 'settings' || page === 'account' || page === 'workspace') && !user && !import.meta.env.DEV) setPage('login');
   }, [authChecked, page, user]);
 
   useLayoutEffect(() => {
@@ -290,6 +315,8 @@ export default function App() {
   }, [page, lang, t]);
 
   const selectedChange = useMemo(() => changes.find(change => change.path === selected), [changes, selected]);
+  const selectedUserRepository = useMemo(() => userRepositories.find(item => item.id === selectedRepositoryId) ?? null, [userRepositories, selectedRepositoryId]);
+  const workspaceHasNoRepository = !import.meta.env.DEV && !repositoryAccessDisabled && !loading && userRepositories.length === 0;
   const allPaths = useMemo(() => [...new Set([...files.map(file => file.path), ...changes.map(change => change.path)])].sort(), [files, changes]);
   const filteredFeed = useMemo(() => feed
     .filter(item => `${item.name} ${item.username} ${item.description}`.toLowerCase().includes(feedSearch.trim().toLowerCase()))
@@ -310,10 +337,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!selected || selectedChange) { setContent(''); return; }
-    void getJSON<{content: string}>('/api/repo/file?path=' + encodeURIComponent(selected), t)
+    if (!selected || selectedChange || (!import.meta.env.DEV && !selectedRepositoryId)) { setContent(''); return; }
+    const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(selectedRepositoryId)}/workspace`;
+    void getJSON<{content: string}>(`${repositoryBase}/file?path=${encodeURIComponent(selected)}`, t)
       .then(result => setContent(result.content)).catch(fetchError => setContent(String(fetchError)));
-  }, [selected, selectedChange]);
+  }, [selected, selectedChange, selectedRepositoryId, t]);
 
   useEffect(() => {
     if (!aiTask || aiTask.state === 'ready' || aiTask.state === 'error') return;
@@ -327,15 +355,17 @@ export default function App() {
     const [command, ...args] = terminal.trim().split(/\s+/);
     if (!command) return;
     try {
+      if (!import.meta.env.DEV && !selectedRepositoryId) throw new Error(t('workspace.noRepository'));
+      const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(selectedRepositoryId)}/workspace`;
       let result: unknown;
-      if (command === 'status') result = await getJSON('/api/repo/status', t);
-      else if (command === 'log') result = await getJSON('/api/repo/log', t);
-      else if (command === 'add') result = await postJSON('/api/repo/add', {paths: args.length ? args : ['.']}, t);
-      else if (command === 'commit') result = await postJSON('/api/repo/commit', {message: args[0] === '-m' ? args.slice(1).join(' ') : args.join(' ')}, t);
-      else if (command === 'branch') result = await postJSON('/api/repo/branch', {name: args[0]}, t);
-      else if (command === 'checkout') result = await postJSON('/api/repo/checkout', {name: args[0]}, t);
-      else if (command === 'merge') result = await postJSON('/api/repo/merge', {name: args[0]}, t);
-      else if (command === 'stash') result = await postJSON('/api/repo/stash', {action: args[0] ?? 'push'}, t);
+      if (command === 'status') result = await getJSON(`${repositoryBase}/status`, t);
+      else if (command === 'log') result = await getJSON(`${repositoryBase}/log`, t);
+      else if (command === 'add') result = await postJSON(`${repositoryBase}/add`, {paths: args.length ? args : ['.']}, t);
+      else if (command === 'commit') result = await postJSON(`${repositoryBase}/commit`, {message: args[0] === '-m' ? args.slice(1).join(' ') : args.join(' ')}, t);
+      else if (command === 'branch') result = await postJSON(`${repositoryBase}/branch`, {name: args[0]}, t);
+      else if (command === 'checkout') result = await postJSON(`${repositoryBase}/checkout`, {name: args[0]}, t);
+      else if (command === 'merge') result = await postJSON(`${repositoryBase}/merge`, {name: args[0]}, t);
+      else if (command === 'stash') result = await postJSON(`${repositoryBase}/stash`, {action: args[0] ?? 'push'}, t);
       else throw new Error(t('error.commands'));
       setOutput(history => [JSON.stringify(result), ...history]);
       await refresh();
@@ -359,6 +389,24 @@ export default function App() {
     const displayName = form.querySelector<HTMLInputElement>('input[name="displayName"]')?.value ?? '';
     const email = form.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? '';
     setRegistrationReady(requiredInputs.every(input => input.validity.valid) && displayName.trim().length > 0 && emailMeetsPolicy(email) && passwordMeetsPolicy(password) && password === confirmation);
+  };
+
+  const createRepository = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (repositoryCreateLoading) return;
+    setRepositoryCreateError('');
+    setRepositoryCreateLoading(true);
+    try {
+      const result = await postJSON<{repository: {id: string}}>('/api/repositories', {
+        name: repositoryCreateName.trim(), description: '', isPublic: repositoryCreatePublic,
+      }, t);
+      setSelectedRepositoryId(result.repository.id);
+      setRepositoryCreateOpen(false);
+      setRepositoryCreateName('');
+      setRepositoryCreatePublic(false);
+    } catch (cause) {
+      setRepositoryCreateError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setRepositoryCreateLoading(false); }
   };
 
   const signOut = async () => {
@@ -500,9 +548,10 @@ export default function App() {
   return <main className={`${dark ? 'app dark' : 'app'}${repositoryAccessDisabled?' workspace-access-disabled':''}`}>
     <header>
       <div className="brand"><span className="logo"><AIVerseMark/></span><div><b>{t('workspace.productName')}</b><small>{t('workspace.tagline')}</small></div></div>
-      <div className="header-right"><span className={repositoryAccessDisabled?'connection setup-needed':error?'connection offline':'connection'}>● {repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.offline'):t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
+      <div className="header-right">{!import.meta.env.DEV&&user&&userRepositories.length>0&&<label className="workspace-repository-picker"><span>{t('workspace.repository')}</span><select value={selectedRepositoryId} onChange={event=>setSelectedRepositoryId(event.target.value)} aria-label={t('workspace.selectRepository')}>{userRepositories.map(item=><option key={item.id} value={item.id}>{item.name} · {item.isPublic?t('workspace.publicRepository'):t('workspace.privateRepository')}</option>)}</select></label>}{!import.meta.env.DEV&&user&&<button className="workspace-new-repository" onClick={()=>{setRepositoryCreateOpen(!repositoryCreateOpen);setRepositoryCreateError('')}}>{t('workspace.newRepository')}</button>}<span className={repositoryAccessDisabled?'connection setup-needed':error?'connection offline':'connection'}>● {repositoryAccessDisabled?t('workspace.storageUnavailable'):error?t('workspace.offline'):t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
     </header>
-    {repositoryAccessDisabled?<div className="workspace-access-notice" role="status"><span className="workspace-access-icon" aria-hidden="true">i</span><div><b>{t('workspace.accessNoticeTitle')}</b><p>{t('workspace.accessNoticeBody')}</p></div>{user&&<button className="workspace-access-action" onClick={()=>setPage('account')}>{t('workspace.viewAccountId')}</button>}</div>:error&&<div className="error-banner" role="alert"><span>{t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
+    {repositoryAccessDisabled?<div className="workspace-access-notice" role="status"><span className="workspace-access-icon" aria-hidden="true">i</span><div><b>{t('workspace.storageUnavailableTitle')}</b><p>{t('workspace.storageUnavailableBody')}</p></div></div>:error&&<div className="error-banner" role="alert"><span>{t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
+    {!import.meta.env.DEV&&user&&(repositoryCreateOpen||userRepositories.length===0)&&<section className="workspace-repository-creator"><div><p className="eyebrow">{userRepositories.length?t('workspace.repositorySettings'):t('workspace.firstRepository')}</p><h2>{userRepositories.length?t('workspace.newRepository'):t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p></div><form onSubmit={event=>void createRepository(event)}><label>{t('workspace.repositoryName')}<input value={repositoryCreateName} onChange={event=>setRepositoryCreateName(event.target.value)} minLength={1} maxLength={100} pattern="[A-Za-z0-9._\\-]{1,100}" placeholder={t('workspace.repositoryNamePlaceholder')} required/></label><label className="workspace-repository-visibility"><input type="checkbox" checked={repositoryCreatePublic} onChange={event=>setRepositoryCreatePublic(event.target.checked)}/><span>{t('workspace.makeRepositoryPublic')}</span></label>{repositoryCreateError&&<p className="form-error" role="alert">{repositoryCreateError}</p>}<div><button className="action" disabled={repositoryCreateLoading||!repositoryCreateName.trim()}>{repositoryCreateLoading?t('workspace.creatingRepository'):t('workspace.createRepository')}</button>{userRepositories.length>0&&<button type="button" className="secondary action" onClick={()=>setRepositoryCreateOpen(false)}>{t('common.cancel')}</button>}</div></form></section>}
     {loading && <div className="workspace-loading" role="status" aria-live="polite"><span className="loading-spinner" aria-hidden="true"/><span>{t('workspace.loading')}</span><div className="loading-track"><i/></div></div>}
     <section className="workspace">
       <aside className="sidebar">
@@ -522,7 +571,7 @@ export default function App() {
       <section className="center">
         <div className="workspace-overview">
           <div className="workspace-greeting">
-            <div><p className="workspace-kicker">{t('workspace.kicker')}</p><h1>{t('workspace.project')}</h1><p>{t('workspace.projectIntro')}</p></div>
+          <div><p className="workspace-kicker">{t('workspace.kicker')}</p><h1>{selectedUserRepository?.name ?? t('workspace.project')}</h1><p>{selectedUserRepository?.description || t('workspace.projectIntro')}</p></div>
             <div className="workspace-quick-actions"><button className="mobile-ai-toggle" onClick={()=>setShowMobileAI(true)}>{t('workspace.openCopilot')}{' '}<span>✦</span></button><button onClick={()=>setPage('feed')}>{t('workspace.exploreCommunity')}{' '}<span>↗</span></button><button className="quick-primary" onClick={()=>setPage('docs')}>{t('workspace.openGuides')}{' '}<span>→</span></button></div>
           </div>
           <div className="workspace-metrics">
@@ -533,7 +582,7 @@ export default function App() {
           </div>
           <div className="workspace-section-label"><div><span className="section-spark">✦</span><b>{t('workspace.activity')}</b><small> {t('workspace.activityHint')}</small></div><span className="activity-count">{t('workspace.historyCount', {count:formatNumber(log.length)})}</span></div>
         </div>
-        {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><p className="eyebrow">{t('workspace.accessSetup')}</p><h2>{t('workspace.accessPanelTitle')}</h2><p>{t('workspace.accessPanelBody')}</p>{user&&<button className="secondary action" onClick={()=>setPage('account')}>{t('workspace.viewAccountId')}</button>}</div>:<><div className="graph">
+        {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><p className="eyebrow">{t('workspace.storageUnavailable')}</p><h2>{t('workspace.storageUnavailableTitle')}</h2><p>{t('workspace.storageUnavailableBody')}</p></div>:workspaceHasNoRepository?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌘</span><p className="eyebrow">{t('workspace.firstRepository')}</p><h2>{t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p><button className="action" onClick={()=>setRepositoryCreateOpen(true)}>{t('workspace.newRepository')}</button></div>:<><div className="graph">
           <div className="panel-head"><span>{t('workspace.commitHistory')}</span><small>{t('workspace.branch', {branch:status.branch})}</small></div>
           {log.length ? <div className="commit-timeline">{log.slice(0, 5).map((item,index)=><article className={index===0?'commit-item latest':'commit-item'} key={item.hash}><span className="commit-node"/><div><div className="commit-item-title"><b>{item.commit.message}</b>{index===0&&<span>{t('workspace.latest')}</span>}</div><p><code>{item.hash.slice(0,8)}</code><i/>{formatDate(item.commit.date, {dateStyle:'medium',timeStyle:'short'})}</p></div></article>)}</div> : loading ? <div className="timeline-loading" aria-hidden="true"><i/><i/><i/></div> : <div className="timeline-empty"><span>✦</span><div><b>{t('workspace.historyEmptyTitle')}</b><p>{t('workspace.historyEmptyBody')}</p></div></div>}
         </div>
@@ -547,15 +596,15 @@ export default function App() {
         <div className="ai-panel-heading"><span className="ai-spark">✦</span><div><b>{t('workspace.copilot')}</b><small>{t('workspace.aiConnected')}</small></div><span className="online">●</span></div>
         <div className="ai-welcome"><span>✧</span><b>{t('workspace.discover')}</b><p>{t('workspace.aiIntro')}</p></div>
         <div className="ai-action-label">{t('workspace.quickActions')}</div>
-        <button className="action" onClick={() => void requestAI('review')} disabled={!changes.length||repositoryAccessDisabled}>{t('workspace.reviewChanges', {count:formatNumber(changes.length),plural:changes.length === 1?'':'s'})}</button>
-        <button className="action secondary" onClick={() => void requestAI('commit-msg')} disabled={!changes.length||repositoryAccessDisabled}>{t('workspace.suggestCommit')}</button>
+        <button className="action" onClick={() => void requestAI('review')} disabled={!changes.length||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.reviewChanges', {count:formatNumber(changes.length),plural:changes.length === 1?'':'s'})}</button>
+        <button className="action secondary" onClick={() => void requestAI('commit-msg')} disabled={!changes.length||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.suggestCommit')}</button>
         <div className="ai-suggestions" aria-label={t('workspace.suggestedQuestions')}>
           <button onClick={()=>setAiQuestion(t('workspace.questionUnderstand'))}>{t('workspace.understandProject')}</button>
           <button onClick={()=>setAiQuestion(t('workspace.questionRisks'))}>{t('workspace.findRisks')}</button>
           <button onClick={()=>setAiQuestion(t('workspace.questionNext'))}>{t('workspace.nextStep')}</button>
         </div>
-        <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
-        <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
+        <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
+        <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
         <div className={`task-state ${aiTask?.state ?? ''}`}>{aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
         {aiTask&&<pre className="ai-result">{aiTask.result ?? aiTask.error ?? t('workspace.preparingAnswer')}</pre>}
         <div className="ai-provider-note"><span>✧</span> {t('workspace.model', {model:health?.provider ?? t('workspace.productName')})}</div>
@@ -563,8 +612,8 @@ export default function App() {
         <div className="panel-head state-heading">{t('workspace.status')}</div><div className="stats"><span>{formatNumber(status.staged.length)}<small>{t('workspace.staged')}</small></span><span>{formatNumber(status.modified.length)}<small>{t('workspace.modified')}</small></span><span>{formatNumber(status.untracked.length)}<small>{t('workspace.untracked')}</small></span></div>
       </aside>
     </section>
-    <section className="terminal"><div className="terminal-head"><span><i/> {t('workspace.terminal')}</span><small>{t('workspace.terminalTagline')}</small><button onClick={()=>setPage('docs')}>{t('workspace.commands')}</button></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>aiverse ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder={repositoryAccessDisabled?t('workspace.commandAccessDisabled'):t('workspace.terminalPlaceholder')} disabled={repositoryAccessDisabled}/><button onClick={() => void run()} disabled={repositoryAccessDisabled}>↵</button></div></div></section>
-    <footer className="workspace-footer"><span><AIVerseMark/> {t('workspace.productName')}{' '}<i/> {t('workspace.changesOnBranch', {count:formatNumber(changes.length),branch:status.branch})}</span><div><button onClick={()=>setPage('home')}>{t('nav.home')}</button><button onClick={()=>setPage('feed')}>{t('nav.community')}</button><button onClick={()=>setPage('docs')}>{t('nav.guides')}</button><button onClick={()=>setPage('terms')}>{t('workspace.terms')}</button><button onClick={()=>setPage('privacy')}>{t('workspace.privacy')}</button></div><span>● {repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.offline'):t('workspace.allUpdated')}</span></footer>
+    <section className="terminal"><div className="terminal-head"><span><i/> {t('workspace.terminal')}</span><small>{t('workspace.terminalTagline')}</small><button onClick={()=>setPage('docs')}>{t('workspace.commands')}</button></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>aiverse ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder={repositoryAccessDisabled?t('workspace.commandAccessDisabled'):workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.terminalPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><button onClick={() => void run()} disabled={repositoryAccessDisabled||workspaceHasNoRepository}>↵</button></div></div></section>
+    <footer className="workspace-footer"><span><AIVerseMark/> {t('workspace.productName')}{' '}<i/> {t('workspace.changesOnBranch', {count:formatNumber(changes.length),branch:status.branch})}</span><div><button onClick={()=>setPage('home')}>{t('nav.home')}</button><button onClick={()=>setPage('feed')}>{t('nav.community')}</button><button onClick={()=>setPage('docs')}>{t('nav.guides')}</button><button onClick={()=>setPage('terms')}>{t('workspace.terms')}</button><button onClick={()=>setPage('privacy')}>{t('workspace.privacy')}</button></div><span>● {repositoryAccessDisabled?t('workspace.storageUnavailable'):error?t('workspace.offline'):t('workspace.allUpdated')}</span></footer>
   </main>;
 }
 

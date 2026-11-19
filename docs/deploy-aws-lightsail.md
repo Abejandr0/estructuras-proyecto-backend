@@ -49,22 +49,11 @@ docker compose -f docker-compose.aws.yml logs -f backend caddy
 
 Abre `https://aiverse.tudominio.com`. La API y los WebSockets pasan por el mismo dominio; el backend y la URI de Atlas no se publican directamente.
 
-### Autorizar el repositorio compartido para una cuenta
+### Repositorios aislados por cuenta
 
-La API heredada de repositorio está desactivada por defecto. Solo actívala si esta instancia la usará un único operador: varias cuentas autorizadas compartirían el mismo repositorio del servidor. Después de desplegar el frontend nuevo, inicia sesión, abre **Cuenta** y copia tu **ID de cuenta**. En el `.env` de Lightsail configura:
+El dashboard multiusuario usa `/api/repositories`: cada cuenta lista y crea sus propios repositorios. Los metadatos guardan el propietario (`ownerId`) y los objetos se guardan en un directorio separado del volumen persistente. Cada operación comprueba la sesión y que el repositorio pertenezca a esa cuenta. En el dashboard, cada usuario crea su repositorio; queda privado por defecto y puede marcarlo público para aparecer en la comunidad.
 
-```dotenv
-ENABLE_SHARED_REPOSITORY_API=true
-SHARED_REPOSITORY_ALLOWED_USER_IDS=<ID-de-tu-cuenta>
-```
-
-No agregues cuentas que no deban acceder ni publiques el `.env`. Recrea el backend para cargar la configuración:
-
-```bash
-docker compose -f docker-compose.aws.yml up -d --force-recreate backend
-```
-
-`/api/health` debe indicar `"sharedRepositoryApiEnabled":true`. La API web sigue exigiendo una sesión válida, el origen permitido y CSRF en escrituras; la allowlist no convierte el repositorio en público. No habilites esta API para una instancia multiusuario: cada cuenta autorizada ve el mismo repositorio.
+Deja `ENABLE_SHARED_REPOSITORY_API=false` en una instancia pública. La API heredada `/api/repo` opera sobre un único repositorio global y no debe habilitarse para todas las cuentas; `SHARED_REPOSITORY_ALLOWED_USER_IDS` solo sirve para una instalación privada de un operador. No agregues ahí a todos los usuarios.
 
 ## 6. Verificar y mantener
 

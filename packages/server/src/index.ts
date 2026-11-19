@@ -15,6 +15,7 @@ import {resolveRepository} from './repository-root.js';
 import {Repository} from '@aiverse/core';
 import {activities, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
 import {AuthError, createAccount, createSession, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
+import {createWorkspaceRepositoriesRouter} from './workspace-repositories.js';
 
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
 const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
@@ -119,7 +120,7 @@ app.use(['/api/repo', '/api/remote'], async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/health', (_request, response) => response.json({ok: true, ...(process.env.NODE_ENV === 'production' ? {} : {root: repo.root}), provider: externalAIEnabled ? aiProvider : 'unconfigured', sharedRepositoryApiEnabled}));
+app.get('/api/health', (_request, response) => response.json({ok: true, ...(process.env.NODE_ENV === 'production' ? {} : {root: repo.root}), provider: externalAIEnabled ? aiProvider : 'unconfigured', sharedRepositoryApiEnabled, userRepositoriesEnabled: process.env.NODE_ENV !== 'production' || Boolean(repositories && users)}));
 app.get('/api/auth/csrf', (_request, response) => {
   const token = randomUUID() + randomUUID();
   const secure = process.env.NODE_ENV === 'production';
@@ -230,6 +231,7 @@ app.post('/api/feed/posts', async (request, response, next) => {
     response.status(201).json({post: {...post, username: user.username, display_name: user.display_name}});
   } catch (error) { next(error); }
 });
+app.use('/api/repositories', createWorkspaceRepositoriesRouter(repo.root));
 app.post('/api/repositories', async (request, response, next) => {
   try {
     if (!requireCsrf(request, response)) return;
@@ -238,13 +240,13 @@ app.post('/api/repositories', async (request, response, next) => {
     if (!user) { response.status(401).json({error: 'Inicia sesión para continuar.'}); return; }
     const name = typeof request.body?.name === 'string' ? request.body.name.trim() : '';
     const description = typeof request.body?.description === 'string' ? request.body.description.trim() : '';
-    if (!/^[A-Za-z0-9._-]{1,100}$/.test(name) || description.length > 350) { response.status(400).json({error: 'Nombre o descripción no válidos.'}); return; }
+    if (!/^[A-Za-z0-9._\-]{1,100}$/.test(name) || description.length > 350) { response.status(400).json({error: 'Nombre o descripción no válidos.'}); return; }
     const plan = String(user.plan ?? 'free');
     const repositoryLimit = plan === 'pro' ? Infinity : plan === 'plus' ? 20 : plan === 'starter' ? 10 : 3;
     const quotaFilter = repositoryLimit === Infinity ? {id: user.id} : {id: user.id, $expr: {$lt: [{$ifNull: ['$repositoryCount', 0]}, repositoryLimit]}};
     const quotaReservation = await users.updateOne(quotaFilter, {$inc: {repositoryCount: 1}});
     if (!quotaReservation.modifiedCount) { response.status(403).json({error: `Tu plan ${plan} permite hasta ${repositoryLimit} repositorios. Actualiza tu plan para crear más.`}); return; }
-    const repository = {id: randomUUID(), ownerId: user.id, name, description, isPublic: request.body?.isPublic !== false,
+    const repository = {id: randomUUID(), ownerId: user.id, name, description, isPublic: request.body?.isPublic === true,
       diskKey: randomUUID(), starsCount: 0, createdAt: new Date()};
     try {
       await repositories.insertOne(repository);
@@ -257,7 +259,8 @@ app.post('/api/repositories', async (request, response, next) => {
       if ((error as {code?: number}).code === 11000) { response.status(409).json({error: 'Ya tienes un repositorio con ese nombre.'}); return; }
       throw error;
     }
-    response.status(201).json({repository: {...repository, disk_key: repository.diskKey, is_public: repository.isPublic}});
+    response.status(201).json({repository: {id: repository.id, ownerId: repository.ownerId, name: repository.name,
+      description: repository.description, isPublic: repository.isPublic, starsCount: repository.starsCount, createdAt: repository.createdAt}});
   } catch (error) { next(error); }
 });
 app.get('/api/pull-requests', async (request, response, next) => {
