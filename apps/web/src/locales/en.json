@@ -261,7 +261,6 @@
   "workspace.productName": "AIVerse",
   "workspace.tagline": "Your development space",
   "workspace.offline": "Offline",
-  "workspace.connected": "Backend connected",
   "workspace.accessSetup": "Storage unavailable",
   "workspace.commandAccessDisabled": "Terminal paused: storage unavailable",
   "workspace.repositoryStorageUnavailable": "Repository storage is not configured on this server.",
