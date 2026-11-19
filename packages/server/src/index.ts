@@ -14,13 +14,15 @@ import {AITaskQueue, GeminiProvider, OpenAIProvider} from './ai.js';
 import {resolveRepository} from './repository-root.js';
 import {Repository} from '@aiverse/core';
 import {activities, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
-import {AuthError, createAccount, createSession, currentUser, destroySession, hasValidSessionToken, login, requireCsrf} from './auth.js';
+import {AuthError, createAccount, createSession, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
 
 const autoInit = process.argv.includes('--auto-init') || process.env.MINIGIT_AUTO_INIT === 'true';
 const {repo, initialized} = await resolveRepository({cwd: process.cwd(), initCwd: process.env.INIT_CWD, explicitRoot: process.env.MINIGIT_REPO, autoInit});
 const port = Number(process.env.PORT ?? 4179);
 const host = process.env.HOST ?? (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
-const sharedRepositoryApiEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_SHARED_REPOSITORY_API === 'true';
+const sharedRepositoryAllowedUserIds = new Set((process.env.SHARED_REPOSITORY_ALLOWED_USER_IDS ?? '').split(',').map(value => value.trim()).filter(Boolean));
+const remoteApiToken = process.env.MINIGIT_REMOTE_TOKEN ?? '';
+const sharedRepositoryApiEnabled = process.env.NODE_ENV !== 'production' || (process.env.ENABLE_SHARED_REPOSITORY_API === 'true' && (sharedRepositoryAllowedUserIds.size > 0 || remoteApiToken.length >= 32));
 const app = express();
 const server = createServer(app);
 function isAllowedWebOrigin(origin: string): boolean {
@@ -33,7 +35,8 @@ const wss = new WebSocketServer({server, path: '/api/events', verifyClient: ({or
     const allowedOrigin = Boolean(origin && isAllowedWebOrigin(origin));
     const cookieHeader = req.headers.cookie ?? '';
     const sessionToken = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith('aiverse_session='))?.slice('aiverse_session='.length) ?? '';
-    const authorized = process.env.NODE_ENV !== 'production' || (sharedRepositoryApiEnabled && allowedOrigin && await hasValidSessionToken(decodeURIComponent(sessionToken)));
+    const sessionUserId = process.env.NODE_ENV === 'production' ? await sessionUserIdForToken(decodeURIComponent(sessionToken)) : null;
+    const authorized = process.env.NODE_ENV !== 'production' || (sharedRepositoryApiEnabled && allowedOrigin && Boolean(sessionUserId && sharedRepositoryAllowedUserIds.has(sessionUserId)));
     callback(authorized && (process.env.NODE_ENV !== 'production' || allowedOrigin), authorized ? 0 : 403, 'Origin or session not allowed');
   })().catch(() => callback(false, 403, 'Origin or session not allowed'));
 }});
@@ -97,9 +100,23 @@ app.use((request, response, next) => {
 });
 app.options('*', (_request, response) => response.sendStatus(204));
 
-app.use(['/api/repo', '/api/remote'], (_request, response, next) => {
-  if (sharedRepositoryApiEnabled) { next(); return; }
-  response.status(503).json({error: 'El repositorio compartido está deshabilitado en producción. Habilítalo solo en una instalación de confianza y de un solo operador.'});
+app.use(['/api/repo', '/api/remote'], async (request, response, next) => {
+  if (!sharedRepositoryApiEnabled) { response.status(503).json({error: 'El repositorio compartido está deshabilitado en producción.'}); return; }
+  if (process.env.NODE_ENV !== 'production') { next(); return; }
+  try {
+    if (request.originalUrl.startsWith('/api/remote')) {
+      const authorization = request.get('authorization') ?? '';
+      const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+      const expected = Buffer.from(remoteApiToken);
+      const supplied = Buffer.from(suppliedToken);
+      if (expected.length < 32 || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) { response.status(401).json({error: 'Se requiere el token de sincronización.'}); return; }
+      next(); return;
+    }
+    const user = await currentUser(request);
+    if (!user || !sharedRepositoryAllowedUserIds.has(String(user.id))) { response.status(401).json({error: 'Esta cuenta no tiene acceso al repositorio compartido.'}); return; }
+    if (request.method !== 'GET' && !requireCsrf(request, response)) return;
+    next();
+  } catch (error) { next(error); }
 });
 
 app.get('/api/health', (_request, response) => response.json({ok: true, ...(process.env.NODE_ENV === 'production' ? {} : {root: repo.root}), provider: externalAIEnabled ? aiProvider : 'unconfigured', sharedRepositoryApiEnabled}));

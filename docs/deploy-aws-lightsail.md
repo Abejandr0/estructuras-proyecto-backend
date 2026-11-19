@@ -49,6 +49,23 @@ docker compose -f docker-compose.aws.yml logs -f backend caddy
 
 Abre `https://aiverse.tudominio.com`. La API y los WebSockets pasan por el mismo dominio; el backend y la URI de Atlas no se publican directamente.
 
+### Autorizar el repositorio compartido para una cuenta
+
+La API heredada de repositorio está desactivada por defecto. Solo actívala si esta instancia la usará un único operador: varias cuentas autorizadas compartirían el mismo repositorio del servidor. Después de desplegar el frontend nuevo, inicia sesión, abre **Cuenta** y copia tu **ID de cuenta**. En el `.env` de Lightsail configura:
+
+```dotenv
+ENABLE_SHARED_REPOSITORY_API=true
+SHARED_REPOSITORY_ALLOWED_USER_IDS=<ID-de-tu-cuenta>
+```
+
+No agregues cuentas que no deban acceder ni publiques el `.env`. Recrea el backend para cargar la configuración:
+
+```bash
+docker compose -f docker-compose.aws.yml up -d --force-recreate backend
+```
+
+`/api/health` debe indicar `"sharedRepositoryApiEnabled":true`. La API web sigue exigiendo una sesión válida, el origen permitido y CSRF en escrituras; la allowlist no convierte el repositorio en público. No habilites esta API para una instancia multiusuario: cada cuenta autorizada ve el mismo repositorio.
+
 ## 6. Verificar y mantener
 
 - Comprueba `https://aiverse.tudominio.com/api/health/ready`: debe responder `{"ok":true,"database":"connected"}`.

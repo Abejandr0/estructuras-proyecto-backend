@@ -9,6 +9,7 @@ type Status = {branch: string; staged: Entry[]; untracked: string[]; modified: s
 type Change = {path: string; status: 'modified' | 'deleted' | 'untracked'; oldText: string; newText: string; lines: string[]};
 type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'ready' | 'error'; result?: string; error?: string; attempts: number};
 type Health = {ok: boolean; root?: string; provider: string; sharedRepositoryApiEnabled: boolean};
+type AccountUser = {id: string; username: string; display_name: string; email: string; plan?: string; repositoryCount?: number};
 
 const api = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:4179' : '')).replace(/\/$/, '');
 const eventsUrl = new URL('/api/events', api || window.location.origin);
@@ -75,6 +76,27 @@ async function postJSON<T>(route: string, body: unknown, t: Translator): Promise
   return result;
 }
 
+async function postNoContent(route: string, t: Translator): Promise<void> {
+  const {csrfToken} = await getJSON<{csrfToken: string}>('/api/auth/csrf', t);
+  let response: Response;
+  try { response = await fetch(api + route, {method: 'POST', credentials: 'include', headers: {'X-CSRF-Token': csrfToken}}); }
+  catch { throw new Error(t('error.backendConnection')); }
+  if (response.ok) return;
+  const result = await response.json().catch(() => ({error: response.statusText})) as {error?: string};
+  throw new Error(result.error ?? response.statusText);
+}
+
+function passwordMeetsPolicy(value: string): boolean {
+  return value.length >= 12 && value.length <= 128 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /[0-9]/.test(value) && /[^A-Za-z0-9\s]/.test(value) && !/(password|contraseña)/i.test(value);
+}
+
+function emailMeetsPolicy(value: string): boolean {
+  const email = value.trim().toLowerCase();
+  const emailPattern = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+  const localPart = email.split('@')[0] ?? '';
+  return email.length <= 254 && emailPattern.test(email) && !localPart.startsWith('.') && !localPart.endsWith('.') && !localPart.includes('..');
+}
+
 export default function App() {
   const {lang, setLanguage, t, formatDate, formatNumber, formatPrice} = useI18n();
   const [page, setCurrentPage] = useState<Page>(pageFromLocation);
@@ -83,9 +105,13 @@ export default function App() {
   const [feedError, setFeedError] = useState('');
   const [postsLoading, setPostsLoading] = useState(true);
   const [postsError, setPostsError] = useState('');
-  const [user, setUser] = useState<{username:string;display_name:string;email:string}|null>(null);
+  const [user, setUser] = useState<AccountUser|null>(null);
   const [formError, setFormError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [registrationReady, setRegistrationReady] = useState(false);
+  const [accountActionError, setAccountActionError] = useState('');
+  const [accountActionLoading, setAccountActionLoading] = useState(false);
+  const [accountIdCopied, setAccountIdCopied] = useState(false);
   const [passwordValue, setPasswordValue] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
@@ -115,6 +141,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const dark = theme === 'dark' || (theme === 'system' && systemDark);
+  const repositoryAccessDisabled = health?.sharedRepositoryApiEnabled === false;
   const setPage = (nextPage: RoutePage) => {
     const destination = nextPage === 'settings' && !user ? 'login' : nextPage;
     window.history.pushState({page: destination}, '', pageRoutes[destination]);
@@ -325,6 +352,42 @@ export default function App() {
     } catch (aiError) { setError(aiError instanceof Error ? aiError.message : String(aiError)); }
   };
 
+  const updateRegistrationValidity = (form: HTMLFormElement) => {
+    const requiredInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[required]'));
+    const password = form.querySelector<HTMLInputElement>('input[name="password"]')?.value ?? '';
+    const confirmation = form.querySelector<HTMLInputElement>('input[name="confirmPassword"]')?.value ?? '';
+    const displayName = form.querySelector<HTMLInputElement>('input[name="displayName"]')?.value ?? '';
+    const email = form.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? '';
+    setRegistrationReady(requiredInputs.every(input => input.validity.valid) && displayName.trim().length > 0 && emailMeetsPolicy(email) && passwordMeetsPolicy(password) && password === confirmation);
+  };
+
+  const signOut = async () => {
+    if (accountActionLoading) return;
+    setAccountActionLoading(true);
+    setAccountActionError('');
+    try {
+      await postNoContent('/api/auth/logout', t);
+      setUser(null);
+      setAuthChecked(true);
+      setPage('home');
+    } catch (cause) {
+      setAccountActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const copyAccountId = async () => {
+    if (!user?.id) return;
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setAccountIdCopied(true);
+      setAccountActionError('');
+    } catch {
+      setAccountActionError(t('account.copyError'));
+    }
+  };
+
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (authSubmitting) return;
@@ -333,9 +396,10 @@ export default function App() {
     const password = String(data.get('password') ?? '');
     const email = String(data.get('email') ?? '').trim();
     if (page === 'register') {
-      const policyOk = password.length >= 12 && password.length <= 128 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9\s]/.test(password);
+      const policyOk = passwordMeetsPolicy(password);
       if (!policyOk) { setFormError(t('error.passwordRequirements')); return; }
       if (data.get('confirmPassword') !== password) { setFormError(t('error.passwordMismatch')); return; }
+      if (!emailMeetsPolicy(email)) { setFormError(t('error.emailInvalid')); return; }
     }
     if (!email) { setFormError(t('error.emailRequired')); return; }
     setAuthSubmitting(true);
@@ -359,6 +423,13 @@ export default function App() {
     {label:t('auth.passwordAvoid'), valid:passwordValue.length>0&&!/(password|contraseña)/i.test(passwordValue)},
   ];
   const passwordValid = passwordChecks.every(check => check.valid) && !/password|contraseña/i.test(passwordValue);
+  const accountPlan = user?.plan ?? 'free';
+  const accountPlanName = accountPlan.charAt(0).toUpperCase() + accountPlan.slice(1);
+  const accountRepositoryLimit = accountPlan === 'pro' ? null : accountPlan === 'plus' ? 20 : accountPlan === 'starter' ? 10 : 3;
+  const accountRepositoryCount = Math.max(0, user?.repositoryCount ?? 0);
+  const currentThemeLabel = theme === 'system'
+    ? t('theme.systemCurrent', {mode:systemDark ? t('theme.modeDark') : t('theme.modeLight')})
+    : t(theme === 'dark' ? 'theme.dark' : 'theme.light');
 
   if (page === 'notFound') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeChange={updateTheme}/><section className="not-found-page"><p className="eyebrow">{t('error.notFoundEyebrow')}</p><span className="not-found-code" aria-hidden="true">404</span><h1>{t('error.notFoundTitle')}</h1><p>{t('error.notFoundBody')}</p><button className="action" onClick={()=>setPage('home')}>{t('common.backHome')}{' '}<span>→</span></button></section><SiteFooter navigate={setPage}/></main>;
 
@@ -376,32 +447,62 @@ export default function App() {
   if (page === 'login' || page === 'register') return <main className={dark?'auth-page dark':'auth-page'}>
     <div className="auth-aside"><button className="wordmark" onClick={()=>setPage('home')}><AIVerseMark/><span>A<span className="wordmark-i">I</span>Verse</span></button><div><p className="eyebrow">{t('auth.brandEyebrow')}</p><h2>{t('auth.brandTitle')}</h2><p>{t('footer.tagline')}</p></div><span>{t('auth.brandFooter')}</span></div>
     <section className="auth-card"><button className="auth-back" onClick={()=>setPage('home')}>← {t('common.backHome')}</button><p className="eyebrow">{page==='login'?t('auth.welcomeEyebrow'):t('auth.registerEyebrow')}</p><h1>{page==='login'?t('auth.loginTitle'):t('auth.registerTitle')}</h1><p className="auth-intro">{page==='login'?t('auth.loginIntro'):t('auth.registerIntro')}</p>
-      <form onSubmit={event=>void submitAuth(event)} noValidate={false}>
-        {page==='register'&&<><label>{t('auth.username')}<input name="username" placeholder={t('auth.usernamePlaceholder')} required minLength={1} maxLength={39} autoComplete="username" pattern="[A-Za-z0-9][A-Za-z0-9-]{0,37}[A-Za-z0-9]?"/><small>{t('auth.usernameHint')}</small></label><label>{t('auth.displayName')}<input name="displayName" placeholder={t('auth.displayNamePlaceholder')} required maxLength={80} autoComplete="name"/></label></>}
+      <form onSubmit={event=>void submitAuth(event)} onInput={event=>{if(page==='register')updateRegistrationValidity(event.currentTarget)}} noValidate={false}>
+        {page==='register'&&<><label>{t('auth.username')}<input name="username" placeholder={t('auth.usernamePlaceholder')} required minLength={1} maxLength={39} autoComplete="username" pattern="[A-Za-z0-9](?:[A-Za-z0-9\-]{0,37}[A-Za-z0-9])?"/><small>{t('auth.usernameHint')}</small></label><label>{t('auth.displayName')}<input name="displayName" placeholder={t('auth.displayNamePlaceholder')} required maxLength={80} autoComplete="name"/></label></>}
         <label>{t('auth.email')}<input name="email" type="email" inputMode="email" placeholder={t('auth.emailPlaceholder')} required maxLength={254} autoComplete="email"/></label>
         <label>{t('auth.password')}<div className="password-field"><input name="password" type={showPassword?'text':'password'} placeholder={page==='register'?t('auth.passwordCreatePlaceholder'):t('auth.passwordPlaceholder')} required minLength={page==='register'?12:1} maxLength={page==='register'?128:256} autoComplete={page==='register'?'new-password':'current-password'} value={page==='register'?passwordValue:undefined} onChange={event=>{if(page==='register')setPasswordValue(event.target.value)}}/><button type="button" className="password-toggle" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword?t('auth.hidePassword'):t('auth.showPassword')}>{showPassword?t('auth.hidePassword'):t('auth.showPassword')}</button></div></label>
         {page==='register'&&<><ul className="password-checks" aria-label={t('auth.passwordRequirements')}>{passwordChecks.map(check=><li key={check.label} className={check.valid?'passed':''}><span aria-hidden="true">{check.valid?'✓':'○'}</span>{check.label}</li>)}</ul><label>{t('auth.confirmPassword')}<input name="confirmPassword" type={showPassword?'text':'password'} placeholder={t('auth.confirmPlaceholder')} required minLength={12} maxLength={128} autoComplete="new-password"/></label><p className="password-match" aria-live="polite">{passwordValue&&passwordValid?t('auth.passwordStrong'):t('auth.passwordUse')}</p></>}
         {formError&&<p className="form-error" role="alert">{formError}</p>}
-        <button className="action auth-submit" disabled={authSubmitting || (page==='register'&&!passwordValid)}>{authSubmitting?t('auth.connecting'):page==='login'?t('nav.login'):t('auth.createFree')}{!authSubmitting&&<span>→</span>}</button>
+        <button className="action auth-submit" disabled={authSubmitting || (page==='register'&&!registrationReady)}>{authSubmitting?t('auth.connecting'):page==='login'?t('nav.login'):t('auth.createFree')}{!authSubmitting&&<span>→</span>}</button>
       </form>
-      <p className="auth-switch">{page==='login'?t('auth.firstTime'):t('auth.alreadyHaveAccount')} <button className="inline-button" onClick={()=>{setFormError('');setPasswordValue('');setPage(page==='login'?'register':'login')}}>{page==='login'?t('auth.registerTitle'):t('auth.switchLogin')}</button></p><p className="auth-legal">{t('auth.legalIntro')}{' '}<button onClick={()=>setPage('terms')}>{t('footer.terms')}</button> {t('auth.and')}{' '}<button onClick={()=>setPage('privacy')}>{t('footer.privacy')}</button>.</p>
+      <p className="auth-switch">{page==='login'?t('auth.firstTime'):t('auth.alreadyHaveAccount')} <button className="inline-button" onClick={()=>{setFormError('');setPasswordValue('');setRegistrationReady(false);setPage(page==='login'?'register':'login')}}>{page==='login'?t('auth.registerTitle'):t('auth.switchLogin')}</button></p><p className="auth-legal">{t('auth.legalIntro')}{' '}<button onClick={()=>setPage('terms')}>{t('footer.terms')}</button> {t('auth.and')}{' '}<button onClick={()=>setPage('privacy')}>{t('footer.privacy')}</button>.</p>
     </section></main>;
 
   if (page === 'home' || page === 'account' || page === 'settings' || page === 'prs' || page === 'docs' || page === 'pricing' || page === 'terms' || page === 'privacy' || page === 'legal' || page === 'cookies') return <main className={dark?'app marketing-app dark':'app marketing-app'}><SiteHeader page={page} user={user} navigate={setPage} theme={theme} dark={dark} onThemeChange={updateTheme}/>
-    {page==='settings'?<section className="product-page settings-page"><p className="eyebrow">{t('settings.eyebrow')}</p><h1>{t('settings.title')}</h1><p>{t('settings.intro')}</p><div className="settings-card"><label>{t('language.menu')}<select value={lang} onChange={event=>setLanguage(event.target.value as Language)}><option value="es">{t('language.spanish')}</option><option value="en">{t('language.english')}</option></select></label><label>{t('settings.theme')}<select value={theme} onChange={event=>updateTheme(event.target.value as Theme)}><option value="system">{t('settings.followSystem')}</option><option value="light">{t('theme.light')}</option><option value="dark">{t('theme.dark')}</option></select></label><p className="system-theme-note">{t('settings.systemNow')}{' '}<b>{systemDark?t('theme.modeDark'):t('theme.modeLight')}</b>. {theme==='system'?t('settings.systemFollow'):t('settings.manualTheme')}</p></div><button className="secondary action" onClick={()=>setPage('account')}>{t('settings.backAccount')}</button></section>
-    :page==='account'?<section className="product-page account-panel"><p className="eyebrow">{t('account.eyebrow')}</p><div className="account-heading"><span className="avatar">{user?.display_name?.[0]?.toUpperCase()??'A'}</span><div><h1>{user?.display_name??t('account.title')}</h1><p>@{user?.username} · {user?.email}</p></div></div><div className="account-plan"><div><b>{t('account.freePlan')}</b><p>{t('account.freeDescription')}</p></div><button className="action" onClick={()=>setPage('pricing')}>{t('account.seePlans')}</button></div><button className="secondary action" onClick={()=>setPage('settings')}>{t('account.editPreferences')}</button></section>
+    {page==='settings'?<section className="product-page settings-page">
+      <div className="settings-page-heading"><div><p className="eyebrow">{t('settings.eyebrow')}</p><h1>{t('settings.title')}</h1><p>{t('settings.intro')}</p></div><button className="secondary action" onClick={()=>setPage('account')}>{t('settings.backAccount')}</button></div>
+      <div className="settings-layout">
+        <div className="settings-card settings-preferences-card">
+          <div className="settings-section-heading"><span aria-hidden="true">◉</span><div><h2>{t('settings.appearanceTitle')}</h2><p>{t('settings.appearanceBody')}</p></div></div>
+          <label>{t('language.menu')}<select value={lang} onChange={event=>setLanguage(event.target.value as Language)}><option value="es">{t('language.spanish')}</option><option value="en">{t('language.english')}</option></select></label>
+          <label>{t('settings.theme')}<select value={theme} onChange={event=>updateTheme(event.target.value as Theme)}><option value="system">{t('settings.followSystem')}</option><option value="light">{t('theme.light')}</option><option value="dark">{t('theme.dark')}</option></select></label>
+          <div className="system-theme-note" role="status"><span>{t('settings.systemNow')}</span><b>{systemDark?t('theme.modeDark'):t('theme.modeLight')}</b><p>{theme==='system'?t('settings.systemFollow'):t('settings.manualTheme')}</p></div>
+        </div>
+        <aside className="settings-side">
+          <section className="settings-summary-card"><p className="eyebrow">{t('settings.previewEyebrow')}</p><h2>{currentThemeLabel}</h2><p>{t('settings.previewBody')}</p><span className={`settings-preview-swatch${dark?' is-dark':''}`} aria-hidden="true"><i/><i/><i/></span></section>
+          <section className="settings-summary-card"><p className="eyebrow">{t('account.profileDetails')}</p><h2>{user?.display_name??t('account.title')}</h2><p>@{user?.username} · {user?.email}</p><button className="secondary action" onClick={()=>setPage('account')}>{t('account.title')}</button></section>
+        </aside>
+      </div>
+    </section>
+    :page==='account'?<section className="product-page account-panel">
+      <div className="account-page-heading"><div><p className="eyebrow">{t('account.eyebrow')}</p><h1>{t('account.title')}</h1><p>{t('account.intro')}</p></div><button className="action account-open-workspace" onClick={()=>setPage('workspace')}>{t('nav.openWorkspace')}</button></div>
+      <div className="account-layout">
+        <section className="account-card account-profile-card">
+          <div className="account-profile-top"><span className="avatar">{user?.display_name?.[0]?.toUpperCase()??'A'}</span><div><span className="account-status"><i/>{t('account.active')}</span><h2>{user?.display_name??t('account.title')}</h2><p>@{user?.username}</p></div></div>
+          <div className="account-section-heading"><div><h3>{t('account.profileDetails')}</h3><p>{t('account.profileDetailsHint')}</p></div></div>
+          <dl className="account-details"><div><dt>{t('account.displayName')}</dt><dd>{user?.display_name??'—'}</dd></div><div><dt>{t('account.username')}</dt><dd>@{user?.username??'—'}</dd></div><div><dt>{t('account.email')}</dt><dd>{user?.email??'—'}</dd></div></dl>
+          <div className="account-id-row"><div><span>{t('account.accountId')}</span><code>{user?.id??'—'}</code></div><button type="button" className="account-copy-button" onClick={()=>void copyAccountId()} disabled={!user?.id}>{accountIdCopied?t('account.copiedId'):t('account.copyId')}</button></div>
+        </section>
+        <div className="account-side-grid">
+          <section className="account-card account-plan-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.planAndUsage')}</p><h2>{accountPlanName}</h2></div><span className="account-status"><i/>{t('account.active')}</span></div><p>{accountPlan==='free'?t('account.freeDescription'):t('account.paidPlanDescription')}</p><div className="account-usage-heading"><span>{t('account.repositoryUsage')}</span><b>{accountRepositoryLimit===null?t('account.repositoryUnlimited',{used:formatNumber(accountRepositoryCount)}):t('account.repositoryOfLimit',{used:formatNumber(accountRepositoryCount),limit:formatNumber(accountRepositoryLimit)})}</b></div>{accountRepositoryLimit!==null&&<progress className="account-usage-progress" max={accountRepositoryLimit} value={Math.min(accountRepositoryCount,accountRepositoryLimit)} aria-label={t('account.repositoryUsage')}/>}<button className="action" onClick={()=>setPage('pricing')}>{t('account.seePlans')}</button></section>
+          <section className="account-card account-preferences-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.preferences')}</p><h2>{t('account.preferencesTitle')}</h2></div><span className="account-card-icon" aria-hidden="true">◉</span></div><dl className="account-preference-list"><div><dt>{t('account.interfaceLanguage')}</dt><dd>{lang==='es'?t('language.spanish'):t('language.english')}</dd></div><div><dt>{t('account.appearance')}</dt><dd>{currentThemeLabel}</dd></div></dl><button className="secondary action" onClick={()=>setPage('settings')}>{t('account.editPreferences')}</button></section>
+          <section className="account-card account-security-card"><div className="account-card-heading"><div><p className="eyebrow">{t('account.security')}</p><h2>{t('account.activeSession')}</h2></div><span className="account-card-icon" aria-hidden="true">⌑</span></div><p>{t('account.sessionDescription')}</p><button className="secondary action account-signout" onClick={()=>void signOut()} disabled={accountActionLoading}>{accountActionLoading?t('account.signingOut'):t('account.signOut')}</button></section>
+        </div>
+      </div>
+      {accountIdCopied&&<p className="account-feedback" role="status">{t('account.copiedId')}</p>}{accountActionError&&<p className="form-error account-feedback" role="alert">{accountActionError}</p>}
+    </section>
     :page==='docs'?<DocumentationPage navigate={setPage}/>
     :page==='prs'?<section className="product-page"><p className="eyebrow">{t('prs.eyebrow')}</p><h1>{t('prs.title')}</h1><p>{t('prs.intro')}</p><div className="feature-row"><article><b>{t('prs.contextReview')}</b><p>{t('prs.contextReviewBody')}</p></article><article><b>{t('prs.decisions')}</b><p>{t('prs.decisionsBody')}</p></article><article><b>{t('prs.aiHelp')}</b><p>{t('prs.aiHelpBody')}</p></article></div><button className="action" onClick={()=>setPage(user?'workspace':'register')}>{t('prs.start')}</button></section>
     :page==='terms'||page==='privacy'||page==='legal'||page==='cookies'?<><LegalPage kind={page}/><SiteFooter navigate={setPage}/></>
     :page==='pricing'?<PricingPage user={user} billingEnabled={billingEnabled} navigate={setPage} startCheckout={startCheckout}/>
     :<><Homepage user={user} navigate={setPage}/><SiteFooter navigate={setPage}/></>}</main>;
 
-  return <main className={dark ? 'app dark' : 'app'}>
+  return <main className={`${dark ? 'app dark' : 'app'}${repositoryAccessDisabled?' workspace-access-disabled':''}`}>
     <header>
       <div className="brand"><span className="logo"><AIVerseMark/></span><div><b>{t('workspace.productName')}</b><small>{t('workspace.tagline')}</small></div></div>
-      <div className="header-right"><span className={error ? 'connection offline' : 'connection'}>● {error ? t('workspace.offline') : t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
+      <div className="header-right"><span className={repositoryAccessDisabled?'connection setup-needed':error?'connection offline':'connection'}>● {repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.offline'):t('workspace.connected')}</span><span className="branch">⌘ {status.branch}</span>{user&&<button className="workspace-nav" onClick={()=>setPage('settings')}>{t('settings.title')}</button>}<LanguageControl compact/><ThemeControl theme={theme} dark={dark} onSelect={updateTheme} compact/>{user&&<button className="workspace-account" onClick={()=>setPage('account')}>@{user.username}</button>}</div>
     </header>
-    {error && <div className="error-banner" role="alert"><span>{health?.sharedRepositoryApiEnabled === false ? error : t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
+    {repositoryAccessDisabled?<div className="workspace-access-notice" role="status"><span className="workspace-access-icon" aria-hidden="true">i</span><div><b>{t('workspace.accessNoticeTitle')}</b><p>{t('workspace.accessNoticeBody')}</p></div>{user&&<button className="workspace-access-action" onClick={()=>setPage('account')}>{t('workspace.viewAccountId')}</button>}</div>:error&&<div className="error-banner" role="alert"><span>{t('error.workspaceConnection', {error})}</span><button onClick={()=>{setLoading(true);void refresh()}}>{t('common.retry')}</button></div>}
     {loading && <div className="workspace-loading" role="status" aria-live="polite"><span className="loading-spinner" aria-hidden="true"/><span>{t('workspace.loading')}</span><div className="loading-track"><i/></div></div>}
     <section className="workspace">
       <aside className="sidebar">
@@ -428,33 +529,33 @@ export default function App() {
             <article><span className="metric-icon violet">⌘</span><div><b>{formatNumber(log.length)}</b><small>{t('workspace.commits')}</small></div></article>
             <article><span className="metric-icon amber">✎</span><div><b>{formatNumber(changes.length)}</b><small>{t('workspace.pendingChanges')}</small></div></article>
             <article><span className="metric-icon green">▤</span><div><b>{formatNumber(files.length)}</b><small>{t('workspace.trackedFiles')}</small></div></article>
-            <article className="workspace-branch-card"><span>{t('workspace.currentBranch')}</span><b>⑂ {status.branch}</b><small>{error ? t('workspace.syncPaused') : t('workspace.repositoryConnected')}</small></article>
+            <article className="workspace-branch-card"><span>{t('workspace.currentBranch')}</span><b>⑂ {status.branch}</b><small>{repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.syncPaused'):t('workspace.repositoryConnected')}</small></article>
           </div>
           <div className="workspace-section-label"><div><span className="section-spark">✦</span><b>{t('workspace.activity')}</b><small> {t('workspace.activityHint')}</small></div><span className="activity-count">{t('workspace.historyCount', {count:formatNumber(log.length)})}</span></div>
         </div>
-        <div className="graph">
+        {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><p className="eyebrow">{t('workspace.accessSetup')}</p><h2>{t('workspace.accessPanelTitle')}</h2><p>{t('workspace.accessPanelBody')}</p>{user&&<button className="secondary action" onClick={()=>setPage('account')}>{t('workspace.viewAccountId')}</button>}</div>:<><div className="graph">
           <div className="panel-head"><span>{t('workspace.commitHistory')}</span><small>{t('workspace.branch', {branch:status.branch})}</small></div>
           {log.length ? <div className="commit-timeline">{log.slice(0, 5).map((item,index)=><article className={index===0?'commit-item latest':'commit-item'} key={item.hash}><span className="commit-node"/><div><div className="commit-item-title"><b>{item.commit.message}</b>{index===0&&<span>{t('workspace.latest')}</span>}</div><p><code>{item.hash.slice(0,8)}</code><i/>{formatDate(item.commit.date, {dateStyle:'medium',timeStyle:'short'})}</p></div></article>)}</div> : loading ? <div className="timeline-loading" aria-hidden="true"><i/><i/><i/></div> : <div className="timeline-empty"><span>✦</span><div><b>{t('workspace.historyEmptyTitle')}</b><p>{t('workspace.historyEmptyBody')}</p></div></div>}
         </div>
         <div className="editor">
           <div className="panel-head"><span>{selected || t('workspace.changesTree')}</span><small>{selectedChange ? selectedChange.status : t('workspace.confirmedContent')}</small></div>
           {selectedChange ? <div className="diff-grid"><DiffColumn title={t('workspace.before')} text={selectedChange.oldText}/><DiffColumn title={t('workspace.after')} text={selectedChange.newText}/></div> : <pre>{selected ? content : t('workspace.selectFile')}</pre>}
-        </div>
+        </div></>}
       </section>
       <aside className={showMobileAI ? 'right mobile-ai-open' : 'right'}>
         <button className="mobile-ai-close" onClick={()=>setShowMobileAI(false)}>{t('workspace.closeCopilot')}{' '}<span>×</span></button>
         <div className="ai-panel-heading"><span className="ai-spark">✦</span><div><b>{t('workspace.copilot')}</b><small>{t('workspace.aiConnected')}</small></div><span className="online">●</span></div>
         <div className="ai-welcome"><span>✧</span><b>{t('workspace.discover')}</b><p>{t('workspace.aiIntro')}</p></div>
         <div className="ai-action-label">{t('workspace.quickActions')}</div>
-        <button className="action" onClick={() => void requestAI('review')} disabled={!changes.length}>{t('workspace.reviewChanges', {count:formatNumber(changes.length),plural:changes.length === 1?'':'s'})}</button>
-        <button className="action secondary" onClick={() => void requestAI('commit-msg')} disabled={!changes.length}>{t('workspace.suggestCommit')}</button>
+        <button className="action" onClick={() => void requestAI('review')} disabled={!changes.length||repositoryAccessDisabled}>{t('workspace.reviewChanges', {count:formatNumber(changes.length),plural:changes.length === 1?'':'s'})}</button>
+        <button className="action secondary" onClick={() => void requestAI('commit-msg')} disabled={!changes.length||repositoryAccessDisabled}>{t('workspace.suggestCommit')}</button>
         <div className="ai-suggestions" aria-label={t('workspace.suggestedQuestions')}>
           <button onClick={()=>setAiQuestion(t('workspace.questionUnderstand'))}>{t('workspace.understandProject')}</button>
           <button onClick={()=>setAiQuestion(t('workspace.questionRisks'))}>{t('workspace.findRisks')}</button>
           <button onClick={()=>setAiQuestion(t('workspace.questionNext'))}>{t('workspace.nextStep')}</button>
         </div>
-        <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={t('workspace.askPlaceholder')}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
-        <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
+        <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
+        <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
         <div className={`task-state ${aiTask?.state ?? ''}`}>{aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
         {aiTask&&<pre className="ai-result">{aiTask.result ?? aiTask.error ?? t('workspace.preparingAnswer')}</pre>}
         <div className="ai-provider-note"><span>✧</span> {t('workspace.model', {model:health?.provider ?? t('workspace.productName')})}</div>
@@ -462,8 +563,8 @@ export default function App() {
         <div className="panel-head state-heading">{t('workspace.status')}</div><div className="stats"><span>{formatNumber(status.staged.length)}<small>{t('workspace.staged')}</small></span><span>{formatNumber(status.modified.length)}<small>{t('workspace.modified')}</small></span><span>{formatNumber(status.untracked.length)}<small>{t('workspace.untracked')}</small></span></div>
       </aside>
     </section>
-    <section className="terminal"><div className="terminal-head"><span><i/> {t('workspace.terminal')}</span><small>{t('workspace.terminalTagline')}</small><button onClick={()=>setPage('docs')}>{t('workspace.commands')}</button></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>aiverse ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder={t('workspace.terminalPlaceholder')}/><button onClick={() => void run()}>↵</button></div></div></section>
-    <footer className="workspace-footer"><span><AIVerseMark/> {t('workspace.productName')}{' '}<i/> {t('workspace.changesOnBranch', {count:formatNumber(changes.length),branch:status.branch})}</span><div><button onClick={()=>setPage('home')}>{t('nav.home')}</button><button onClick={()=>setPage('feed')}>{t('nav.community')}</button><button onClick={()=>setPage('docs')}>{t('nav.guides')}</button><button onClick={()=>setPage('terms')}>{t('workspace.terms')}</button><button onClick={()=>setPage('privacy')}>{t('workspace.privacy')}</button></div><span>● {error ? t('workspace.offline') : t('workspace.allUpdated')}</span></footer>
+    <section className="terminal"><div className="terminal-head"><span><i/> {t('workspace.terminal')}</span><small>{t('workspace.terminalTagline')}</small><button onClick={()=>setPage('docs')}>{t('workspace.commands')}</button></div><div className="terminal-body"><div className="terminal-history">{output.slice(0, 5).map((line, index) => <div key={index}>{line}</div>)}</div><div className="prompt"><b>aiverse ❯</b><input value={terminal} onChange={event => setTerminal(event.target.value)} onKeyDown={event => event.key === 'Enter' && void run()} placeholder={repositoryAccessDisabled?t('workspace.commandAccessDisabled'):t('workspace.terminalPlaceholder')} disabled={repositoryAccessDisabled}/><button onClick={() => void run()} disabled={repositoryAccessDisabled}>↵</button></div></div></section>
+    <footer className="workspace-footer"><span><AIVerseMark/> {t('workspace.productName')}{' '}<i/> {t('workspace.changesOnBranch', {count:formatNumber(changes.length),branch:status.branch})}</span><div><button onClick={()=>setPage('home')}>{t('nav.home')}</button><button onClick={()=>setPage('feed')}>{t('nav.community')}</button><button onClick={()=>setPage('docs')}>{t('nav.guides')}</button><button onClick={()=>setPage('terms')}>{t('workspace.terms')}</button><button onClick={()=>setPage('privacy')}>{t('workspace.privacy')}</button></div><span>● {repositoryAccessDisabled?t('workspace.accessSetup'):error?t('workspace.offline'):t('workspace.allUpdated')}</span></footer>
   </main>;
 }
 

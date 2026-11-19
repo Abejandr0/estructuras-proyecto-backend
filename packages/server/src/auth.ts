@@ -100,11 +100,12 @@ export async function currentUser(request: Request): Promise<Record<string, unkn
   return user ? publicUser(user) : null;
 }
 
-export async function hasValidSessionToken(token: string): Promise<boolean> {
-  if (!sessions || !users || !token) return false;
+export async function sessionUserIdForToken(token: string): Promise<string | null> {
+  if (!sessions || !users || !token) return null;
   const session = await sessions.findOne({tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: {$gt: new Date()}});
-  if (!session) return false;
-  return Boolean(await users.findOne({id: session.userId}));
+  if (!session) return null;
+  const user = await users.findOne({id: session.userId}, {projection: {id: 1}});
+  return typeof user?.id === 'string' ? user.id : null;
 }
 
 export async function destroySession(request: Request, response: Response): Promise<void> {
