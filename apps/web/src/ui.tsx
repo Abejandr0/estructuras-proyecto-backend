@@ -1,13 +1,16 @@
-import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {FormEvent, ReactNode} from 'react';
 import {useI18n} from './i18n';
 import type {Language, MessageKey, TranslationValues} from './i18n';
+
+const CodeEditor = lazy(() => import('./CodeEditor'));
 
 type Commit = {hash: string; commit: {message: string; date: string; parents: string[]}};
 type Entry = {path: string; hash: string};
 type Status = {branch: string; staged: Entry[]; untracked: string[]; modified: string[]};
 type Change = {path: string; status: 'modified' | 'deleted' | 'untracked'; oldText: string; newText: string; lines: string[]};
 type AITask = {id: string; kind: string; state: 'pending' | 'processing' | 'ready' | 'error'; result?: string; error?: string; attempts: number};
+type AIEditProposal = {taskId: string; repositoryId: string; path: string; original: string; content: string; summary: string};
 type Health = {ok: boolean; root?: string; provider: string; sharedRepositoryApiEnabled: boolean; userRepositoriesEnabled?: boolean};
 type AccountUser = {id: string; username: string; display_name: string; email: string; plan?: string; repositoryCount?: number};
 type UserRepository = {id: string; name: string; description: string; isPublic: boolean; stars_count: number; created_at?: string};
@@ -167,6 +170,24 @@ function MarkdownMessage({text}: {text: string}) {
   return <div className="ai-markdown">{blocks}</div>;
 }
 
+function parseAIEdit(result: string, t: Translator): {content: string; summary: string} {
+  const json = result.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let parsed: {content?: unknown; summary?: unknown};
+  try { parsed = JSON.parse(json) as {content?: unknown; summary?: unknown}; }
+  catch { throw new Error(t('workspace.aiEditInvalidResponse')); }
+  if (typeof parsed.content !== 'string' || typeof parsed.summary !== 'string' || !parsed.summary.trim()) {
+    throw new Error(t('workspace.aiEditInvalidResponse'));
+  }
+  if (new TextEncoder().encode(parsed.content).byteLength > 1_000_000) {
+    throw new Error(t('workspace.aiEditOutputTooLarge'));
+  }
+  return {content: parsed.content, summary: parsed.summary.trim().slice(0, 500)};
+}
+
+function codePreview(value: string): string {
+  return value.length > 12_000 ? `${value.slice(0, 12_000)}\n…` : value;
+}
+
 export default function App() {
   const {lang, setLanguage, t, formatDate, formatNumber, formatPrice} = useI18n();
   const [page, setCurrentPage] = useState<Page>(pageFromLocation);
@@ -218,8 +239,12 @@ export default function App() {
   const [output, setOutput] = useState<string[]>([]);
   const [aiTask, setAiTask] = useState<AITask | null>(null);
   const [aiSubmitting, setAiSubmitting] = useState(false);
+  const [aiProposal, setAiProposal] = useState<AIEditProposal|null>(null);
+  const [aiProposalError, setAiProposalError] = useState('');
+  const [aiProposalApplying, setAiProposalApplying] = useState(false);
   const aiRequestSequence = useRef(0);
   const activeAiTaskId = useRef<string | null>(null);
+  const pendingAIEdit = useRef<{requestId: number; repositoryId: string; path: string; original: string; taskId: string|null}|null>(null);
   const [aiQuestion, setAiQuestion] = useState('');
   const [showMobileAI, setShowMobileAI] = useState(false);
   const [showMobileHistory, setShowMobileHistory] = useState(false);
@@ -534,6 +559,7 @@ export default function App() {
 
   useEffect(() => {
     setSelectedBucket(null); setSelected(''); setContent(''); setSavedContent('');
+    pendingAIEdit.current = null; setAiProposal(null); setAiProposalError('');
   }, [selectedRepositoryId]);
 
   useEffect(() => {
@@ -544,6 +570,20 @@ export default function App() {
       }).catch(() => undefined);
     }, 250);
     return () => window.clearTimeout(timer);
+  }, [aiTask]);
+
+  useEffect(() => {
+    if (!aiTask || aiTask.kind !== 'edit' || aiTask.state !== 'ready' || !aiTask.result) return;
+    const pending = pendingAIEdit.current;
+    if (!pending || pending.taskId !== aiTask.id) return;
+    try {
+      const result = parseAIEdit(aiTask.result, t);
+      setAiProposal({taskId: aiTask.id, repositoryId: pending.repositoryId, path: pending.path, original: pending.original, ...result});
+      setAiProposalError('');
+    } catch (cause) {
+      setAiProposal(null);
+      setAiProposalError(cause instanceof Error ? cause.message : String(cause));
+    }
   }, [aiTask]);
 
   const run = async () => {
@@ -581,6 +621,32 @@ export default function App() {
     } finally { setFileSaving(false); }
   };
 
+  const applyAIProposal = async () => {
+    const proposal = aiProposal;
+    if (!proposal || aiProposalApplying || repositoryAccessDisabled || workspaceHasNoRepository) return;
+    if (!import.meta.env.DEV && proposal.repositoryId !== selectedRepositoryId) {
+      setAiProposalError(t('workspace.aiEditDifferentRepository'));
+      return;
+    }
+    if (selected === proposal.path && content !== proposal.original && !window.confirm(t('workspace.replaceEditedFileConfirm'))) return;
+    if (selected !== proposal.path && fileHasUnsavedChanges && !window.confirm(t('workspace.saveCurrentBeforeApplyConfirm'))) return;
+    setAiProposalApplying(true); setAiProposalError('');
+    try {
+      const repositoryBase = import.meta.env.DEV ? '/api/repo' : `/api/repositories/${encodeURIComponent(proposal.repositoryId)}/workspace`;
+      if (selected && selected !== proposal.path && fileHasUnsavedChanges) {
+        await postJSON<{ok: boolean}>(`${repositoryBase}/file`, {path: selected, content}, t);
+        setSavedContent(content);
+      }
+      await postJSON<{ok: boolean}>(`${repositoryBase}/file`, {path: proposal.path, content: proposal.content}, t);
+      if (selected === proposal.path) { setContent(proposal.content); setSavedContent(proposal.content); }
+      pendingAIEdit.current = null;
+      setAiProposal(null);
+      await refresh();
+    } catch (cause) {
+      setAiProposalError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setAiProposalApplying(false); }
+  };
+
   const selectWorkspaceFile = (filePath: string) => {
     if (fileHasUnsavedChanges && !window.confirm(t('workspace.discardUnsavedConfirm'))) return;
     setSelected(filePath); setShowMobileHistory(false);
@@ -589,28 +655,51 @@ export default function App() {
   const selectWorkspaceRepository = (repositoryId: string) => {
     if (repositoryId === selectedRepositoryId) return;
     if (fileHasUnsavedChanges && !window.confirm(t('workspace.discardUnsavedConfirm'))) return;
+    pendingAIEdit.current = null;
+    setAiProposal(null); setAiProposalError('');
     setSelectedRepositoryId(repositoryId);
   };
 
-  const requestAI = async (kind: 'review' | 'commit-msg' | 'ask') => {
+  const requestAI = async (kind: 'review' | 'commit-msg' | 'ask' | 'edit') => {
     const requestId = ++aiRequestSequence.current;
     const question = aiQuestion.trim();
+    if (kind === 'edit' && (!selected || selectedIsImage || !question)) {
+      setAiProposalError(t('workspace.selectTextFileForEdit'));
+      return;
+    }
+    const editPath = selected;
+    const editOriginal = content;
+    const editText = kind === 'edit' ? `Solicitud del usuario:\n${question}\n\nRuta del archivo:\n${editPath}\n\nContenido actual del archivo:\n${editOriginal}` : '';
+    if (kind === 'edit' && editText.length > 100_000) {
+      setAiProposalError(t('workspace.aiEditRequestTooLarge'));
+      return;
+    }
     activeAiTaskId.current = null;
     setAiTask(null);
+    if (kind === 'edit') {
+      pendingAIEdit.current = {requestId, repositoryId: selectedRepositoryId, path: editPath, original: editOriginal, taskId: null};
+      setAiProposal(null);
+      setAiProposalError('');
+    }
     setAiSubmitting(true);
     try {
       const diff = changes.map(change => `diff -- ${change.path}\n${change.lines.join('\n')}`).join('\n');
       const context = selected ? `${selected}\n${content}` : diff;
-      const text = kind === 'ask'
+      const text = kind === 'edit' ? editText : kind === 'ask'
         ? `${t('workspace.aiQuestionPrefix')} ${question}\n\n${t('workspace.aiContextPrefix')}\n${context}`
         : context;
-      const task = await postJSON<AITask>('/api/ai/' + kind, kind === 'ask' ? {text} : {text, diff: context}, t);
+      const task = await postJSON<AITask>('/api/ai/' + kind, kind === 'ask' || kind === 'edit' ? {text} : {text, diff: context}, t);
       if (requestId !== aiRequestSequence.current) return;
       activeAiTaskId.current = task.id;
+      if (kind === 'edit' && pendingAIEdit.current?.requestId === requestId) pendingAIEdit.current.taskId = task.id;
       setAiTask(task);
       if (kind === 'ask' && aiQuestion.trim() === question) setAiQuestion('');
     } catch (aiError) {
-      if (requestId === aiRequestSequence.current) setError(aiError instanceof Error ? aiError.message : String(aiError));
+      if (requestId === aiRequestSequence.current) {
+        const message = aiError instanceof Error ? aiError.message : String(aiError);
+        if (kind === 'edit') setAiProposalError(message);
+        else setError(message);
+      }
     } finally {
       if (requestId === aiRequestSequence.current) setAiSubmitting(false);
     }
@@ -837,7 +926,16 @@ export default function App() {
             <div className="editor-file-title"><span className="editor-file-icon" aria-hidden="true">{selectedIsImage?'▧':'⌘'}</span><div><b>{selected || t('workspace.changesTree')}</b><small>{selectedChange ? selectedChange.status : selected ? t('workspace.confirmedContent') : t('workspace.selectFile')}</small></div></div>
             <div className="editor-actions">{selected&&!selectedIsImage&&<span className={`editor-save-status${fileHasUnsavedChanges?' is-dirty':''}`}>{fileHasUnsavedChanges?t('workspace.unsavedChanges'):t('workspace.fileSaved')}</span>}{selected&&!selectedIsImage&&<button className="editor-save-button" onClick={()=>void saveFile()} disabled={!fileHasUnsavedChanges||fileSaving||repositoryAccessDisabled||workspaceHasNoRepository}>{fileSaving?t('workspace.savingFile'):t('workspace.saveFile')}</button>}</div>
           </div>
-          {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><h2>{t('workspace.storageUnavailableTitle')}</h2><p>{t('workspace.storageUnavailableBody')}</p></div>:workspaceHasNoRepository?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌘</span><h2>{t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p><button className="action" onClick={()=>setRepositoryCreateOpen(true)}>{t('workspace.newRepository')}</button></div>:!selected?<div className="editor-empty"><span>⌘</span><p>{t('workspace.selectFile')}</p></div>:selectedIsImage?<div className="image-viewer">{imageLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('workspace.loadingImage')}</p></div>:imageError?<div className="editor-error" role="alert">{imageError}</div>:imageUrl?<><img src={imageUrl} alt={selected.split('/').pop()??selected}/><div className="image-viewer-caption"><span>{selected}</span><a href={imageUrl} download={selected.split('/').pop()??'image'}>{t('workspace.downloadImage')}</a></div></>:null}</div>:fileLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('common.loading')}</p></div>:fileLoadError?<div className="editor-error" role="alert">{fileLoadError}</div>:<><textarea className="code-editor" value={content} onChange={event=>setContent(event.target.value)} onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void saveFile()}}} aria-label={t('workspace.editFile')} spellCheck={false} wrap="off" />{fileSaveError&&<p className="editor-error" role="alert">{fileSaveError}</p>}</>}
+          {aiProposal&&<section className="ai-edit-review" aria-label={t('workspace.aiEditReview')}>
+            <div className="ai-edit-review-heading"><div><span>✦</span><b>{t('workspace.aiEditProposalTitle')}</b><code>{aiProposal.path}</code></div><p>{aiProposal.summary}</p></div>
+            {selected===aiProposal.path&&content!==aiProposal.original&&<p className="ai-edit-stale" role="status">{t('workspace.aiEditFileChanged')}</p>}
+            {selected!==aiProposal.path&&<div className="ai-edit-target"><span>{t('workspace.aiEditTarget', {path:aiProposal.path})}</span><button type="button" onClick={()=>selectWorkspaceFile(aiProposal.path)}>{t('workspace.openTargetFile')}</button></div>}
+            <div className="diff-grid ai-edit-diff"><DiffColumn title={t('workspace.before')} text={codePreview(aiProposal.original)}/><DiffColumn title={t('workspace.proposedVersion')} text={codePreview(aiProposal.content)}/></div>
+            {aiProposalError&&<p className="editor-error" role="alert">{aiProposalError}</p>}
+            <div className="ai-edit-actions"><button type="button" className="ai-edit-discard" onClick={()=>{pendingAIEdit.current=null;setAiProposal(null);setAiProposalError('')}}>{t('workspace.discardAIEdit')}</button><button type="button" className="ai-edit-apply" onClick={()=>void applyAIProposal()} disabled={aiProposalApplying||repositoryAccessDisabled||workspaceHasNoRepository}>{aiProposalApplying?t('workspace.applyingAIEdit'):t('workspace.applyAIEdit')}</button></div>
+          </section>}
+          {!aiProposal&&aiProposalError&&<div className="editor-error" role="alert">{aiProposalError}</div>}
+          {repositoryAccessDisabled?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌑</span><h2>{t('workspace.storageUnavailableTitle')}</h2><p>{t('workspace.storageUnavailableBody')}</p></div>:workspaceHasNoRepository?<div className="workspace-disabled-state"><span className="workspace-disabled-symbol" aria-hidden="true">⌘</span><h2>{t('workspace.createFirstRepository')}</h2><p>{t('workspace.repositoryIsolationHint')}</p><button className="action" onClick={()=>setRepositoryCreateOpen(true)}>{t('workspace.newRepository')}</button></div>:!selected?<div className="editor-empty"><span>⌘</span><p>{t('workspace.selectFile')}</p></div>:selectedIsImage?<div className="image-viewer">{imageLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('workspace.loadingImage')}</p></div>:imageError?<div className="editor-error" role="alert">{imageError}</div>:imageUrl?<><img src={imageUrl} alt={selected.split('/').pop()??selected}/><div className="image-viewer-caption"><span>{selected}</span><a href={imageUrl} download={selected.split('/').pop()??'image'}>{t('workspace.downloadImage')}</a></div></>:null}</div>:fileLoading?<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('common.loading')}</p></div>:fileLoadError?<div className="editor-error" role="alert">{fileLoadError}</div>:<><Suspense fallback={<div className="editor-empty"><span className="loading-spinner" aria-hidden="true"/><p>{t('common.loading')}</p></div>}><CodeEditor filename={selected} value={content} onChange={setContent} onSave={()=>void saveFile()} dark={dark} ariaLabel={t('workspace.editFile')}/></Suspense>{fileSaveError&&<p className="editor-error" role="alert">{fileSaveError}</p>}</>}
         </div>
       </section>
       <aside className={showMobileAI ? 'right mobile-ai-open' : 'right'}>
@@ -854,8 +952,9 @@ export default function App() {
         </div>
         <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
         <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
+        <button className="action ai-edit-submit" onClick={()=>void requestAI('edit')} disabled={!aiQuestion.trim()||!selected||selectedIsImage||fileLoading||repositoryAccessDisabled||workspaceHasNoRepository||aiSubmitting}>{t('workspace.proposeCodeEdit')}</button>
         <div className={`task-state ${aiSubmitting ? 'processing' : aiTask?.state ?? ''}`} aria-live="polite">{aiSubmitting ? t('workspace.preparingAnswer') : aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
-        {(aiSubmitting||aiTask)&&<div className="ai-result" aria-live="polite"><MarkdownMessage text={aiSubmitting ? t('workspace.preparingAnswer') : aiTask?.result ?? aiTask?.error ?? t('workspace.preparingAnswer')}/></div>}
+        {(aiSubmitting||aiTask)&&<div className="ai-result" aria-live="polite">{aiTask?.kind==='edit'&&aiTask.state==='ready'?<p>{t('workspace.reviewProposalBelow')}</p>:<MarkdownMessage text={aiSubmitting ? t('workspace.preparingAnswer') : aiTask?.result ?? aiTask?.error ?? t('workspace.preparingAnswer')}/>}</div>}
         <div className="ai-provider-note"><span>✧</span> {t('workspace.model', {model:health?.provider ?? t('workspace.productName')})}</div>
         <section className="inspector">
           <div className="inspector-heading"><div className="panel-head">{t('workspace.inspector')}</div><small>{formatNumber(objectCount)}</small></div>

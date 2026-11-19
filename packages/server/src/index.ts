@@ -416,8 +416,10 @@ app.post('/api/ai/:kind', aiLimiter, async (request, response, next) => {
     aiOwnerId = String(user.id);
   }
   const kind = request.params.kind as AITaskKind;
-  if (!['review', 'commit-msg', 'resolve', 'ask'].includes(kind)) { response.status(404).json({error: 'Unknown AI task'}); return; }
-  const task = aiTasks.enqueue(kind, request.body.diff ?? request.body.text ?? '');
+  if (!['review', 'commit-msg', 'resolve', 'ask', 'edit'].includes(kind)) { response.status(404).json({error: 'Unknown AI task'}); return; }
+  const input = request.body.diff ?? request.body.text ?? '';
+  if (typeof input !== 'string' || input.length > 100_000) { response.status(400).json({error: 'El contenido para IA supera el límite permitido.'}); return; }
+  const task = aiTasks.enqueue(kind, input);
   if (aiOwnerId) aiTaskOwners.set(task.id, aiOwnerId);
   response.status(202).json(task);
   } catch (error) { next(error); }
