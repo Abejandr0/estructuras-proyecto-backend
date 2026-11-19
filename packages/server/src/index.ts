@@ -12,7 +12,7 @@ import {WebSocketServer, WebSocket} from 'ws';
 import type {AITask, AITaskKind} from './ai.js';
 import {AITaskQueue, GeminiProvider, OpenAIProvider} from './ai.js';
 import {resolveRepository} from './repository-root.js';
-import {Repository} from '@aiverse/core';
+import {Repository} from 'aiverse-core';
 import {activities, cliTokens, database, initializeDatabase, pullRequests, repositories, reviews, users} from './database.js';
 import {AuthError, createAccount, createSession, currentCliUser, currentUser, destroySession, login, requireCsrf, sessionUserIdForToken} from './auth.js';
 import {createWorkspaceRepositoriesRouter} from './workspace-repositories.js';

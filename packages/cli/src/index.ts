@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {BloomFilter, Repository, type HashAlgorithm} from '@aiverse/core';
+import {BloomFilter, Repository, type HashAlgorithm} from 'aiverse-core';
 import {chmod, mkdir, readFile, readdir, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';

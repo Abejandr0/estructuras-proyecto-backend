@@ -46,7 +46,7 @@ Vercel aplica HTTPS y sirve las rutas públicas de la SPA; Caddy obtiene certifi
 
 Los planes y pagos dependen de la configuración de Mercado Pago en el backend; sin credenciales, el checkout permanece deshabilitado. El backend aplica los límites actuales por plan: Free 3, Starter 10, Plus 20 y Pro ilimitado. Los textos legales de beta requieren añadir el nombre legal y el canal de soporte del operador antes de abrir el registro al público.
 
-CLI: `aiverse init`, `add`, `commit`, `status`, `log`, `branch`, `checkout`, `merge`, `stash`, `reset`, `revert`, `serve`, `clone`, `push`, `pull`. En este checkout puedes compilarlo con `npm run build` y enlazar el comando con `npm link --workspace @aiverse/cli`; después usa `aiverse init` en un proyecto. El transporte remoto actual usa los endpoints HTTP de AIVerse: `aiverse clone <url> <directorio>` y, dentro de un repositorio, `aiverse push <url>` o `aiverse pull <url>`.
+CLI: instala `aiverse-cli` con `npm install --global aiverse-cli`; el ejecutable sigue llamándose `aiverse`. Desde un proyecto local, configura un repositorio de tu cuenta, inicia sesión con el token de **Cuenta → Acceso al CLI** y publica con `aiverse push main`. Los repositorios públicos se pueden clonar sin token; solo su propietario puede publicar cambios.
 
 ### Suscripciones con Mercado Pago (Colombia)
 

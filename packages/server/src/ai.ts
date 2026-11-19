@@ -1,4 +1,4 @@
-import {Queue} from '@aiverse/core';
+import {Queue} from 'aiverse-core';
 
 export type AITaskKind = 'review' | 'commit-msg' | 'resolve' | 'ask';
 export type AITaskState = 'pending' | 'processing' | 'ready' | 'error';

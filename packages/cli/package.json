@@ -1,1 +1,14 @@
-{"name":"@aiverse/cli","version":"0.1.0","type":"module","bin":{"aiverse":"dist/index.js"},"scripts":{"build":"tsc -p tsconfig.json"},"dependencies":{"@aiverse/core":"0.1.0"}}
+{
+  "name": "aiverse-cli",
+  "version": "0.1.0",
+  "description": "Command-line version control for AIVerse repositories.",
+  "type": "module",
+  "bin": {"aiverse": "dist/index.js"},
+  "files": ["dist", "README.md"],
+  "engines": {"node": ">=20"},
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm --prefix ../.. run build --workspace=aiverse-core && npm run build"
+  },
+  "dependencies": {"aiverse-core": "0.1.0"}
+}

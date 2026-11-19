@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @aiverse/core && npm run build -w @aiverse/cli && npm run build -w @aiverse/server && npm run build -w @aiverse/web",
+    "build": "npm run build -w aiverse-core && npm run build -w aiverse-cli && npm run build -w @aiverse/server && npm run build -w @aiverse/web",
     "test": "vitest run --exclude '**/aiverse/**'",
     "bench": "tsx benchmarks/run.ts",
     "dev:server": "npm run dev -w @aiverse/server",

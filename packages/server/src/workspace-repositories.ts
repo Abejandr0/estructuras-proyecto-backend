@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import path from 'node:path';
-import {Repository} from '@aiverse/core';
+import {Repository} from 'aiverse-core';
 import {currentCliUser, currentUser, requireCsrf} from './auth.js';
 import {repositories} from './database.js';
 
