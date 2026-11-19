@@ -1143,6 +1143,7 @@ button { transition: background-color 150ms ease, border-color 150ms ease, color
 }
 
 /* Account-owned repository selection and creation */
+.app.has-repository-creator { grid-template-rows: 66px auto minmax(0, 1fr) 180px 28px; }
 .workspace-repository-picker { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--text-muted); font-size: 11px; }
 .workspace-repository-picker select { width: auto; max-width: 210px; min-height: 36px; margin: 0; padding: 0 9px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--text); font: 600 12px Manrope, sans-serif; }
 .workspace-new-repository { min-height: 36px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--surface); color: var(--text); font: 600 12px Manrope, sans-serif; cursor: pointer; }
@@ -1171,6 +1172,12 @@ button { transition: background-color 150ms ease, border-color 150ms ease, color
   .workspace-repository-creator { grid-template-columns: 1fr; gap: 16px; margin: 10px 9px 0; padding: 16px; }
   .workspace-repository-creator form { grid-template-columns: 1fr; }
   .workspace-repository-visibility { min-height: auto; }
+}
+@media (max-width: 900px) {
+  .app.has-repository-creator { grid-template-rows: 64px auto minmax(0, 1fr) 142px 32px; }
+}
+@media (max-width: 650px) {
+  .app.has-repository-creator { grid-template-rows: 58px auto minmax(0, 1fr) 130px 30px; }
 }
 
 /* Safe local CLI publishing and public read-only repository browsing */
