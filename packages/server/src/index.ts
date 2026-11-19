@@ -50,7 +50,7 @@ function broadcast(event: unknown): void {
 const aiProvider = process.env.AI_PROVIDER ?? 'gemini';
 const externalAIEnabled = process.env.AI_ALLOW_NETWORK === 'true' && Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
 const provider = externalAIEnabled && aiProvider === 'gemini' && process.env.GEMINI_API_KEY
-  ? new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? 'gemini-2.5-flash')
+  ? new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite')
   : externalAIEnabled && process.env.OPENAI_API_KEY
     ? new OpenAIProvider(process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
     : {async run() { throw new Error('Configura GEMINI_API_KEY y AI_ALLOW_NETWORK=true para habilitar la revisión con IA.'); }};

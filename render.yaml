@@ -24,7 +24,7 @@ services:
       - key: ENABLE_SHARED_REPOSITORY_API
         value: "false"
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.5-flash-lite
       - key: MONGODB_URI
         sync: false
       - key: WEB_ORIGIN
