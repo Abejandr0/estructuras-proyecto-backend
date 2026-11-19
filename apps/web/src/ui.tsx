@@ -140,6 +140,9 @@ export default function App() {
   const [terminal, setTerminal] = useState('');
   const [output, setOutput] = useState<string[]>([]);
   const [aiTask, setAiTask] = useState<AITask | null>(null);
+  const [aiSubmitting, setAiSubmitting] = useState(false);
+  const aiRequestSequence = useRef(0);
+  const activeAiTaskId = useRef<string | null>(null);
   const [aiQuestion, setAiQuestion] = useState('');
   const [showMobileAI, setShowMobileAI] = useState(false);
   const [theme, setTheme] = useState<Theme>(readThemePreference);
@@ -409,7 +412,9 @@ export default function App() {
   useEffect(() => {
     if (!aiTask || aiTask.state === 'ready' || aiTask.state === 'error') return;
     const timer = window.setTimeout(() => {
-      void getJSON<AITask>('/api/ai/tasks/' + aiTask.id, t).then(setAiTask).catch(() => undefined);
+      void getJSON<AITask>('/api/ai/tasks/' + aiTask.id, t).then(task => {
+        if (activeAiTaskId.current === task.id) setAiTask(task);
+      }).catch(() => undefined);
     }, 250);
     return () => window.clearTimeout(timer);
   }, [aiTask]);
@@ -437,12 +442,27 @@ export default function App() {
   };
 
   const requestAI = async (kind: 'review' | 'commit-msg' | 'ask') => {
+    const requestId = ++aiRequestSequence.current;
+    const question = aiQuestion.trim();
+    activeAiTaskId.current = null;
+    setAiTask(null);
+    setAiSubmitting(true);
     try {
       const diff = changes.map(change => `diff -- ${change.path}\n${change.lines.join('\n')}`).join('\n');
       const context = selected ? `${selected}\n${content}` : diff;
-      setAiTask(await postJSON<AITask>('/api/ai/' + kind, {text: kind === 'ask' ? `${t('workspace.aiQuestionPrefix')} ${aiQuestion}\n\n${t('workspace.aiContextPrefix')}\n${context}` : context, diff: context}, t));
-      if (kind === 'ask') setAiQuestion('');
-    } catch (aiError) { setError(aiError instanceof Error ? aiError.message : String(aiError)); }
+      const text = kind === 'ask'
+        ? `${t('workspace.aiQuestionPrefix')} ${question}\n\n${t('workspace.aiContextPrefix')}\n${context}`
+        : context;
+      const task = await postJSON<AITask>('/api/ai/' + kind, kind === 'ask' ? {text} : {text, diff: context}, t);
+      if (requestId !== aiRequestSequence.current) return;
+      activeAiTaskId.current = task.id;
+      setAiTask(task);
+      if (kind === 'ask' && aiQuestion.trim() === question) setAiQuestion('');
+    } catch (aiError) {
+      if (requestId === aiRequestSequence.current) setError(aiError instanceof Error ? aiError.message : String(aiError));
+    } finally {
+      if (requestId === aiRequestSequence.current) setAiSubmitting(false);
+    }
   };
 
   const updateRegistrationValidity = (form: HTMLFormElement) => {
@@ -684,8 +704,8 @@ export default function App() {
         </div>
         <label className="ai-ask-label">{t('workspace.askAiverse')}<textarea value={aiQuestion} onChange={event=>setAiQuestion(event.target.value)} onKeyDown={event=>event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&void requestAI('ask')} maxLength={1000} placeholder={workspaceHasNoRepository?t('workspace.noRepository'):t('workspace.askPlaceholder')} disabled={repositoryAccessDisabled||workspaceHasNoRepository}/><small className="ai-input-hint">{t('workspace.askHint', {count:formatNumber(aiQuestion.length)})}</small></label>
         <button className="action ai-submit" onClick={() => void requestAI('ask')} disabled={!aiQuestion.trim()||repositoryAccessDisabled||workspaceHasNoRepository}>{t('workspace.sendQuestion')}{' '}<span>↑</span></button>
-        <div className={`task-state ${aiTask?.state ?? ''}`}>{aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
-        {aiTask&&<pre className="ai-result">{aiTask.result ?? aiTask.error ?? t('workspace.preparingAnswer')}</pre>}
+        <div className={`task-state ${aiSubmitting ? 'processing' : aiTask?.state ?? ''}`} aria-live="polite">{aiSubmitting ? t('workspace.preparingAnswer') : aiTask ? `${t(`task.${aiTask.state}`)} · ${t('workspace.attempt', {count:formatNumber(aiTask.attempts)})}` : t('workspace.answersHere')}</div>
+        {(aiSubmitting||aiTask)&&<pre className="ai-result" aria-live="polite">{aiSubmitting ? t('workspace.preparingAnswer') : aiTask?.result ?? aiTask?.error ?? t('workspace.preparingAnswer')}</pre>}
         <div className="ai-provider-note"><span>✧</span> {t('workspace.model', {model:health?.provider ?? t('workspace.productName')})}</div>
         <div className="inspector"><div className="panel-head">{t('workspace.inspector')}</div><small>{t('workspace.hashTable')}</small><div className="buckets">{buckets.slice(0, 32).map((count, index) => <div key={index} title={t('workspace.bucketTitle', {index:formatNumber(index),count:formatNumber(count)})} style={{height: Math.max(4, count * 12)}}/>)}</div><small>{t('workspace.buckets', {count:formatNumber(buckets.length)})} {t('workspace.trackedFilesCount', {count:formatNumber(files.length)})}</small></div>
         <div className="panel-head state-heading">{t('workspace.status')}</div><div className="stats"><span>{formatNumber(status.staged.length)}<small>{t('workspace.staged')}</small></span><span>{formatNumber(status.modified.length)}<small>{t('workspace.modified')}</small></span><span>{formatNumber(status.untracked.length)}<small>{t('workspace.untracked')}</small></span></div>
